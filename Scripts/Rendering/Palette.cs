@@ -21,8 +21,8 @@ public static class Palette
     public static readonly Color TreeLight = new("6a9a4c");
     public static readonly Color Trunk = new("6b4a2f");
     public static readonly Color Rock = new("8d8a84");
-    public static readonly Color Mountain = new("6d7a8c");
-    public static readonly Color MountainLight = new("7d8a9c");
+    public static readonly Color Mountain = new("7f92a8");      // già "velate" di azzurro: sono lontane
+    public static readonly Color MountainLight = new("8fa1b6");
     public static readonly Color Snow = new("f4f7fb");
 
     // Veicoli

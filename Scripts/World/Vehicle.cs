@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using PigeonRush.Audio;
 using PigeonRush.Core;
 
 namespace PigeonRush.World;
@@ -49,6 +50,11 @@ public partial class Vehicle : Hazard
 
     /// <summary>Ha già lampeggiato in questo passaggio (un avvertimento per veicolo).</summary>
     public bool HasFlashed { get; private set; }
+
+    /// <summary>Il suono di passaggio è già partito in questo passaggio.</summary>
+    public bool PassbyPlayed { get; private set; }
+
+    public bool IsHeavy => Kind is VehicleKind.Truck or VehicleKind.Bus;
 
     public bool IsChangingLane => _laneState != LaneChangeState.None;
 
@@ -109,6 +115,7 @@ public partial class Vehicle : Hazard
         Lane = lane;
         IsHit = false;
         HasFlashed = false;
+        PassbyPlayed = false;
         _flashesLeft = 0;
         _highBeams.Visible = false;
         ResetFlags();
@@ -158,7 +165,13 @@ public partial class Vehicle : Hazard
         // la freccia lampeggia sia durante l'avviso sia durante la manovra
         _blink += dt;
         var side = _toX > _fromX ? 1 : 0;
-        _indicators[side].Visible = Mathf.PosMod(_blink, BlinkPeriod) < BlinkPeriod * 0.5f;
+        var on = Mathf.PosMod(_blink, BlinkPeriod) < BlinkPeriod * 0.5f;
+        if (on != _indicators[side].Visible)
+        {
+            _indicators[side].Visible = on;
+            // tic-tac della freccia: si sente piano e da lontano, utile come avviso
+            GameAudio.Instance?.PlayAt(on ? Sfx.IndicatorTick : Sfx.IndicatorTock, this, Vector3.Zero, 0f, 1f, 40f, 300f);
+        }
 
         if (_laneState == LaneChangeState.Signaling)
         {
@@ -262,6 +275,8 @@ public partial class Vehicle : Hazard
             indicator.GetNode<MeshInstance3D>("Glow").Position = new Vector3(cornerX, y, front + 0.25f);
         }
     }
+
+    public void MarkPassby() => PassbyPlayed = true;
 
     public void MarkHit(Vector3 worldPoint)
     {

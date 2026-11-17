@@ -27,6 +27,11 @@ public partial class TrafficSpawner : Node3D
     private const float FlashMinAhead = 15f;
     private const float FlashMaxAhead = 85f;
 
+    // suono di passaggio: parte in anticipo perché il picco del file coincida col sorpasso
+    private const float PassbyLeadCar = 0.6f;
+    private const float PassbyLeadHeavy = 0.85f;
+    private const float PassbyMaxLateral = 5.5f;
+
     private readonly List<Vehicle> _vehicles = new();
     private readonly List<Hazard> _structures = new();
     private readonly List<Pickup> _pickups = new();
@@ -54,6 +59,12 @@ public partial class TrafficSpawner : Node3D
     public event Action<Vector3>? PigeonHit;
     public event Action<Vector3>? NearMiss;
     public event Action<PickupKind, Vector3>? PickupCollected;
+
+    /// <summary>Un mezzo ha visto il piccione davanti e lampeggia (clacson).</summary>
+    public event Action<Vehicle>? VehicleWarned;
+
+    /// <summary>Un mezzo sta per sfrecciare accanto al piccione.</summary>
+    public event Action<Vehicle>? VehiclePassing;
 
     public override void _Ready()
     {
@@ -103,7 +114,7 @@ public partial class TrafficSpawner : Node3D
     }
 
     /// <summary>Collisioni, passaggi a filo e raccolta oggetti.</summary>
-    public void ResolvePigeon(PigeonController pigeon, float groundStep, float trafficStep)
+    public void ResolvePigeon(PigeonController pigeon, float groundStep, float trafficStep, float approachSpeed)
     {
         var pigeonBox = pigeon.Bounds;
         var pigeonZ = pigeon.Position.Z;
@@ -111,7 +122,10 @@ public partial class TrafficSpawner : Node3D
         FlashLeadVehicles(pigeonBox, pigeonZ);
 
         foreach (var vehicle in _vehicles)
+        {
             ResolveHazard(vehicle, pigeon, pigeonBox, pigeonZ, trafficStep);
+            CheckPassby(vehicle, pigeon.Position, approachSpeed);
+        }
 
         foreach (var structure in _structures)
             ResolveHazard(structure, pigeon, pigeonBox, pigeonZ, groundStep);
@@ -121,7 +135,7 @@ public partial class TrafficSpawner : Node3D
             var pickup = _pickups[i];
             var delta = pickup.Position - pigeon.Position;
             // tolleranza estesa su Z: a 60 m/s il raccoglibile si sposta di 1 m per frame
-            if (Mathf.Abs(delta.X) < 1.1f && Mathf.Abs(delta.Y) < 1.0f && delta.Z > -1.2f - trafficStep && delta.Z < 1.2f)
+            if (Mathf.Abs(delta.X) < 1.4f && Mathf.Abs(delta.Y) < 1.3f && delta.Z > -1.4f - trafficStep && delta.Z < 1.4f)
             {
                 PickupCollected?.Invoke(pickup.Kind, pickup.Position);
                 RemovePickupAt(i);
@@ -159,8 +173,26 @@ public partial class TrafficSpawner : Node3D
 
             var ahead = pigeonZ - vehicle.FrontZ;
             if (ahead > FlashMinAhead && ahead < FlashMaxAhead && vehicle.IsInPath(pigeonBox))
+            {
                 vehicle.FlashHighBeams(_rng.Next(2, 4)); // 2 o 3 lampeggi
+                VehicleWarned?.Invoke(vehicle);
+            }
         }
+    }
+
+    private void CheckPassby(Vehicle vehicle, Vector3 pigeon, float approachSpeed)
+    {
+        if (vehicle.PassbyPlayed)
+            return;
+
+        var lead = vehicle.IsHeavy ? PassbyLeadHeavy : PassbyLeadCar;
+        var timeToPass = (pigeon.Z - vehicle.Position.Z) / Mathf.Max(1f, approachSpeed);
+        if (timeToPass > lead)
+            return;
+
+        vehicle.MarkPassby(); // uno solo per mezzo, anche se lontano lateralmente
+        if (Mathf.Abs(vehicle.Position.X - pigeon.X) < PassbyMaxLateral)
+            VehiclePassing?.Invoke(vehicle);
     }
 
     private void ResolveHazard(Hazard hazard, PigeonController pigeon, Aabb pigeonBox, float pigeonZ, float sweep)

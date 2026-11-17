@@ -141,6 +141,8 @@ public partial class AssetWarmup : Node3D
         yield return () => IndicatorVisuals.Flare;
 
         yield return () => Pickup.CrumbsMesh;
+        yield return () => Pickup.Halo;
+        yield return () => Pickup.Beam;
         yield return () => PoopSystem.DropMesh;
         yield return () => PoopSystem.RoadSplatMesh;
         yield return () => PoopSystem.ReticleMesh;

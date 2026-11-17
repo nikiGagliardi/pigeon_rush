@@ -82,15 +82,16 @@ public static class RoadMeshes
     {
         const float length = GameConfig.SegmentLength;
         var edge = GameConfig.RoadHalfWidth + 0.05f;
-        b.Box(new Vector3(0.15f, 0.02f, length), new Vector3(centerX - edge, 0.01f, 0f), Palette.LineWhite);
-        b.Box(new Vector3(0.15f, 0.02f, length), new Vector3(centerX + edge, 0.01f, 0f), Palette.LineWhite);
+        // strisce alte 3 cm: abbastanza sopra l'asfalto da non sfarfallare in lontananza
+        b.Box(new Vector3(0.15f, 0.03f, length), new Vector3(centerX - edge, 0.015f, 0f), Palette.LineWhite);
+        b.Box(new Vector3(0.15f, 0.03f, length), new Vector3(centerX + edge, 0.015f, 0f), Palette.LineWhite);
 
         // tratteggio: periodo 10 m (divisore di 40) così i segmenti combaciano
         for (var lane = 1; lane < GameConfig.LaneCount; lane++)
         {
             var x = centerX + GameConfig.LaneX(lane) - GameConfig.LaneWidth * 0.5f;
             for (var z = -length * 0.5f + 5f; z < length * 0.5f; z += 10f)
-                b.Box(new Vector3(0.14f, 0.02f, 4.5f), new Vector3(x, 0.01f, z), Palette.LineWhite);
+                b.Box(new Vector3(0.14f, 0.03f, 4.5f), new Vector3(x, 0.015f, z), Palette.LineWhite);
         }
     }
 

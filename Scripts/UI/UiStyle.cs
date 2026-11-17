@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using PigeonRush.Audio;
 
 namespace PigeonRush.UI;
 
@@ -33,6 +34,7 @@ public static class UiStyle
             Text = text,
             CustomMinimumSize = new Vector2(340f, 84f),
         };
+        button.Pressed += () => GameAudio.Instance?.PlayUi(Sfx.UiClick);
         button.AddThemeFontSizeOverride("font_size", fontSize);
         button.AddThemeColorOverride("font_color", TextDark);
         button.AddThemeColorOverride("font_hover_color", TextDark);

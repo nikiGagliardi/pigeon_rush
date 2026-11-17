@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using PigeonRush.Audio;
 using PigeonRush.Core;
 using PigeonRush.Rendering;
 
@@ -29,6 +30,7 @@ public partial class RoadWorks : Hazard
     private readonly MeshInstance3D[] _machines = new MeshInstance3D[MaxMachines];
     private readonly Label3D[] _worksLabels = new Label3D[2];
     private readonly Label3D[] _limitLabels = new Label3D[2];
+    private readonly AudioStreamPlayer3D _beeper;
     private float _blink;
 
     public int ClosedLane { get; private set; }
@@ -73,6 +75,11 @@ public partial class RoadWorks : Hazard
             _machines[i] = new MeshInstance3D { Visible = false };
             AddChild(_machines[i]);
         }
+
+        // cicalino di retromarcia della prima macchina operatrice
+        _beeper = GameAudio.CreateSpatialPlayer(GameAudio.WorldBus, unitSize: 8f, maxDistance: 90f);
+        _beeper.VolumeDb = -4f;
+        AddChild(_beeper);
     }
 
     /// <param name="closedLane">0 = sinistra, 2 = destra (dal punto di vista del piccione).</param>
@@ -111,6 +118,7 @@ public partial class RoadWorks : Hazard
 
         PlaceNets(closedLane, length);
         PlaceMachines(laneX, inner, rng);
+        StartBeeper();
 
         CellMask = Cells.Of(closedLane, 0) | Cells.Of(closedLane, 1) | Cells.Of(closedLane, 2);
     }
@@ -135,6 +143,33 @@ public partial class RoadWorks : Hazard
             : Mathf.Lerp(RoadWorksMeshes.EdgeX(ClosedLane), barrier, (outer - distance) / RoadWorksMeshes.TaperLength);
         limit = wall - RoadWorksMeshes.Side(ClosedLane) * NetClearance;
         return true;
+    }
+
+    public override void _Process(double delta)
+    {
+        // tornato nel pool: il cicalino si spegne
+        if (!Visible && _beeper.Playing)
+            _beeper.Stop();
+    }
+
+    private void StartBeeper()
+    {
+        _beeper.Stop();
+        var stream = GameAudio.Instance?.Stream(Sfx.WorksBeep);
+        if (stream == null)
+            return;
+
+        foreach (var machine in _machines)
+        {
+            if (!machine.Visible)
+                continue;
+
+            _beeper.Stream = stream;
+            _beeper.Position = machine.Position + new Vector3(0f, 2.2f, 0f);
+            _beeper.PitchScale = 0.95f + Random.Shared.NextSingle() * 0.1f;
+            _beeper.Play();
+            return;
+        }
     }
 
     public override void Animate(float dt)

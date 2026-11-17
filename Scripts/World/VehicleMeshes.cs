@@ -129,7 +129,8 @@ public static class VehicleMeshes
         var trailerLength = l - cabLength - 0.3f;
         var trailerZ = -l * 0.5f + trailerLength * 0.5f;
         b.Box(new Vector3(w, 3.0f, trailerLength), new Vector3(0f, 2.5f, trailerZ), new Color("f2f2ee"));        // rimorchio
-        b.Box(new Vector3(w + 0.02f, 0.4f, trailerLength), new Vector3(0f, 2.0f, trailerZ), stripe);              // fascia
+        // la fascia sporge di 2 cm per lato: facce di testa coincidenti col rimorchio = z-fighting (sfarfallio)
+        b.Box(new Vector3(w + 0.02f, 0.4f, trailerLength + 0.04f), new Vector3(0f, 2.0f, trailerZ), stripe);       // fascia
         b.Box(new Vector3(w * 0.8f, 0.4f, l - 0.4f), new Vector3(0f, 0.75f, 0f), Palette.Trim);                   // telaio
         b.Box(new Vector3(0.06f, 2.8f, 0.04f), new Vector3(0f, 2.5f, -l * 0.5f - 0.02f), Palette.ConcreteDark);   // porte posteriori
         AddTaillights(b, 1.0f, 1.1f, -l * 0.5f);
@@ -174,7 +175,7 @@ public static class VehicleMeshes
 
         b.Box(new Vector3(w, 2.9f, l), new Vector3(0f, 1.95f, 0f), body);                                            // carrozzeria
         b.Box(new Vector3(w + 0.02f, 0.95f, l - 2.6f), new Vector3(0f, 2.6f, -0.5f), Palette.Glass);                   // finestrini laterali
-        b.Box(new Vector3(w + 0.02f, 0.28f, l), new Vector3(0f, 1.45f, 0f), stripe);                                  // fascia
+        b.Box(new Vector3(w + 0.02f, 0.28f, l + 0.04f), new Vector3(0f, 1.45f, 0f), stripe);                          // fascia (sporge: niente z-fighting)
         b.Box(new Vector3(w * 0.92f, 1.35f, 0.06f), new Vector3(0f, 2.35f, l * 0.5f + 0.01f), Palette.Glass);         // parabrezza
         b.Box(new Vector3(1.5f, 0.22f, 0.05f), new Vector3(0f, 3.17f, l * 0.5f + 0.02f), Palette.DestinationDisplay, unlit: true); // display destinazione
         b.Box(new Vector3(1.5f, 0.22f, 2.6f), new Vector3(0f, 3.46f, -1.5f), Palette.Chrome);                          // clima sul tetto

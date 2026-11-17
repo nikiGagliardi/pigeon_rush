@@ -67,13 +67,15 @@ public static class TunnelMeshes
         }
 
         // --- rivestimento interno (canna nostra + opposta) ---
-        b.Block(LeftWall, LeftWall + 0.06f, 0f, ceiling, -half, half, Palette.TunnelWall);
-        b.Block(PillarLeft - 0.06f, PillarLeft, 0f, ceiling, -half, half, Palette.TunnelWall);
-        b.Block(PillarRight, PillarRight + 0.06f, 0f, ceiling, -half, half, Palette.TunnelWall);
-        b.Block(RightWall - 0.06f, RightWall, 0f, ceiling, -half, half, Palette.TunnelWall);
-        b.Block(LeftWall, RightWall, ceiling - 0.06f, ceiling, -half, half, Palette.TunnelCeiling);
-        b.Block(LeftWall + 0.06f, LeftWall + 0.1f, 0.3f, 2.6f, -half, half, Palette.TunnelTile);   // fascia chiara bassa
-        b.Block(PillarLeft - 0.1f, PillarLeft - 0.06f, 0.3f, 2.6f, -half, half, Palette.TunnelTile);
+        // arretrato di 2 cm alle estremità: facce di testa coincidenti con la roccia del portale = sfarfallio
+        var lz = half - 0.02f;
+        b.Block(LeftWall, LeftWall + 0.06f, 0f, ceiling, -lz, lz, Palette.TunnelWall);
+        b.Block(PillarLeft - 0.06f, PillarLeft, 0f, ceiling, -lz, lz, Palette.TunnelWall);
+        b.Block(PillarRight, PillarRight + 0.06f, 0f, ceiling, -lz, lz, Palette.TunnelWall);
+        b.Block(RightWall - 0.06f, RightWall, 0f, ceiling, -lz, lz, Palette.TunnelWall);
+        b.Block(LeftWall, RightWall, ceiling - 0.06f, ceiling, -lz, lz, Palette.TunnelCeiling);
+        b.Block(LeftWall + 0.06f, LeftWall + 0.1f, 0.3f, 2.6f, -lz, lz, Palette.TunnelTile);   // fascia chiara bassa
+        b.Block(PillarLeft - 0.1f, PillarLeft - 0.06f, 0.3f, 2.6f, -lz, lz, Palette.TunnelTile);
 
         // --- impianti ---
         for (var z = -half + 3f; z < half; z += 6f)

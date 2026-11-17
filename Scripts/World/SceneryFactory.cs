@@ -12,7 +12,7 @@ public static class SceneryFactory
         var sky = new ProceduralSkyMaterial
         {
             SkyTopColor = new Color("3d7fd1"),
-            SkyHorizonColor = new Color("bfdcf2"),
+            SkyHorizonColor = new Color("a9c9e8"),
             GroundBottomColor = new Color("5b7f3c"),
             GroundHorizonColor = new Color("a9c98f"),
         };
@@ -24,10 +24,16 @@ public static class SceneryFactory
             AmbientLightSource = Godot.Environment.AmbientSource.Sky,
             AmbientLightEnergy = AmbientEnergy,
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            // Nebbia "a profondità": nitido fino a FogBegin, poi sale fino a coprire tutto a FogEnd
+            // (dove nascono i mezzi, così non compaiono dal nulla). In modalità Depth FogDensity è l'intensità massima.
             FogEnabled = true,
+            FogMode = Godot.Environment.FogModeEnum.Depth,
+            FogDepthBegin = FogBegin,
+            FogDepthEnd = FogEnd,
+            FogDepthCurve = 1.6f,
+            FogDensity = 1f,
             FogLightColor = FogColor,
-            FogDensity = 0.0045f,
-            FogSkyAffect = 0.3f,
+            FogSkyAffect = 0f, // il cielo resta saturo, non velato
         };
 
         return new WorldEnvironment { Environment = environment };
@@ -35,7 +41,9 @@ public static class SceneryFactory
 
     public const float SunEnergy = 1.1f;
     public const float AmbientEnergy = 1.0f;
-    public static readonly Color FogColor = new("c4dcef");
+    public const float FogBegin = 90f;
+    public const float FogEnd = 300f;
+    public static readonly Color FogColor = new("a3bed6");
     public static readonly Color TunnelFogColor = new(0.22f, 0.21f, 0.19f);
 
     public static DirectionalLight3D CreateSun() => new()
@@ -61,10 +69,18 @@ public static class SceneryFactory
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
 
+        // le montagne stanno oltre la fine della nebbia: la ignorano, e il "velo" è già nei loro colori
         root.AddChild(new MeshInstance3D
         {
             Mesh = BuildMountains(),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            MaterialOverride = new StandardMaterial3D
+            {
+                VertexColorUseAsAlbedo = true,
+                VertexColorIsSrgb = true,
+                Roughness = 1f,
+                DisableFog = true,
+            },
         });
 
         return root;

@@ -38,6 +38,9 @@ public partial class PoopSystem : Node3D
 
     public event Action<Vehicle, Vector3>? VehicleHit;
 
+    /// <summary>La cacca ha mancato i mezzi ed è finita sull'asfalto.</summary>
+    public event Action<Vector3>? RoadHit;
+
     public override void _Ready()
     {
         for (var i = 0; i < PoolSize; i++)
@@ -155,6 +158,7 @@ public partial class PoopSystem : Node3D
                 node.Mesh = RoadSplatMesh;
                 node.Position = new Vector3(position.X, 0.03f, position.Z);
                 node.Scale = Vector3.One;
+                RoadHit?.Invoke(node.Position);
             }
             else if (position.Z < GameConfig.SpawnZ || position.Z > GameConfig.DespawnZ)
             {

@@ -76,6 +76,7 @@ Scripts/
 │   ├── RoadScroller.cs / RoadMeshes.cs   Strada a segmenti riciclati
 │   ├── StructureMeshes.cs
 │   └── SceneryFactory.cs    Cielo, sole, nebbia, montagne
+├── Audio/GameAudio.cs       Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
 ├── CameraRig/ChaseCamera.cs Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume
 └── UI/                      HUD, controlli touch, schermate
@@ -89,11 +90,12 @@ Scripts/
 - **Guida a destra:** i mezzi contromano (verso +Z) hanno lo spartitraffico alla loro sinistra, quindi la carreggiata opposta sta sul lato +X. Lì il traffico va nella stessa direzione del piccione: a inizio partita ti sorpassa, quando acceleri sei tu a superarlo.
 - **Strutture lunghe** (gallerie, cantieri): nel calcolo del varco conta l'intervallo [fronte, coda], non un singolo istante. Un mezzo non viene generato nella corsia chiusa se raggiungerebbe il cantiere prima di uscire dalla visuale.
 - **Niente scatti alla prima comparsa:** tutti i mesh procedurali (gallerie, cantieri, veicoli…) vengono costruiti durante il menu, uno per frame, e disegnati una volta in miniatura dietro al pannello del titolo, così geometria e shader sono già pronti quando parte la partita. In più l'export Android ha lo **Shader Baker** attivo.
+- **Audio sintetizzato:** tutti gli effetti (`Audio/sfx/*.wav`, 44.1 kHz mono) sono generati da `Tools/synth_sfx.py` (numpy/scipy), niente asset esterni. I passaggi dei mezzi hanno il Doppler già nel file, quindi il Doppler di Godot è spento; i loop (strada, vento, galleria) sono senza cucitura e vengono messi in loop a runtime.
 - **Ordine di update esplicito** in `Main.TickPlaying`: niente dipendenze dall'ordine dei `_Process`.
 
 ## Roadmap
 
-**Fase 1 (fatta):** volo, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
+**Fase 1 (fatta):** volo, effetti sonori, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
 
 **Fase 2:**
 - Falco che insegue se vai troppo piano
@@ -101,7 +103,7 @@ Scripts/
 - Meteo e ora del giorno (vedi sotto), vento laterale
 - Autovelox con flash accecante
 - Power-up: mega-cacca, magnete per le briciole, scudo di piume, slow-motion
-- Audio (motori in avvicinamento, effetto doppler, battito d'ali, splat)
+- Musica; countdown 3-2-1 a inizio partita (i suoni `countdown_beep`/`countdown_go` sono già pronti)
 - Opzione controllo con inclinazione (accelerometro)
 - Skin del piccione, upgrade e classifica online
 
@@ -124,3 +126,23 @@ Note di design:
 - Il cambio di meteo potrebbe avvenire all'uscita delle gallerie, che è il momento naturale per una transizione.
 - Ogni condizione andrebbe definita come preset (densità e colore della nebbia, energia di sole e ambiente, colore del cielo, luci accese) con transizioni graduali, riusando il sistema che già scurisce le gallerie.
 - Su mobile la pioggia va fatta con poche particelle legate alla camera, senza luci dinamiche.
+
+## Audio
+
+| Evento | Suono | Note |
+|---|---|---|
+| Mezzo che lampeggia (piccione sulla sua traiettoria) | `horn_car` / `horn_car_double`, `horn_truck` per camion e bus | 3D, segue il mezzo; max uno ogni 0.6 s |
+| Mezzo che sfreccia accanto (< 5.5 m) | `passby_car` / `passby_truck` | parte 0.6 / 0.85 s prima del sorpasso, così il picco coincide |
+| Cacca su un mezzo | `splat`, `combo` (tono crescente col moltiplicatore), clacson arrabbiato (70%) | il clacson arriva 0.35 s dopo, dal mezzo |
+| Cacca sull'asfalto | `splat` piano e acuto | |
+| Sgancio / munizioni finite | `poop_drop` / clic a vuoto | |
+| Mirino agganciato | `lock_on` | solo quando cambia bersaglio |
+| Briciole, passaggio a filo | `pickup`, `near_miss` | |
+| Inizio salita | `flap` | |
+| Freccia di un mezzo | `indicator_tick` / `indicator_tock` | 3D, si sente da lontano: avvisa del cambio corsia |
+| Macchina operatrice nei cantieri | `works_beep` in loop | 3D, sulla prima macchina |
+| Schianto, schermata di game over | `crash`, `game_over` | |
+| Pulsanti, pausa | `ui_click` | bus UI, funziona anche in pausa |
+| Loop | `road_loop`, `wind_loop`, `tunnel_loop` | volume (e tono del vento) in base a velocità, boost e buio della galleria |
+
+I volumi si ritoccano in `GameAudio.cs` (`BaseDb` per effetto, `WorldBusDb`/`AmbienceBusDb`/`UiBusDb` per bus) e in `Main.UpdateAmbience` per i loop. Per rigenerare i suoni: `python Tools/synth_sfx.py Audio/sfx`.

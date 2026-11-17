@@ -96,8 +96,9 @@ public static class RoadWorksMeshes
         var inner = TaperInner(length);
 
         // asfalto fresato e linea gialla provvisoria (in Svizzera la segnaletica di cantiere è gialla)
-        b.Box(new Vector3(GameConfig.LaneWidth - 0.3f, 0.02f, length), new Vector3(laneX, 0.012f, 0f), Palette.MilledAsphalt);
-        b.Box(new Vector3(0.16f, 0.025f, length + 20f), new Vector3(boundary, 0.016f, 0f), Palette.WorksYellow);
+        // strati separati: fresato (1.2 cm) < strisce bianche (3 cm) < linea gialla provvisoria (4.5 cm, copre il tratteggio)
+        b.Box(new Vector3(GameConfig.LaneWidth - 0.3f, 0.012f, length), new Vector3(laneX, 0.006f, 0f), Palette.MilledAsphalt);
+        b.Box(new Vector3(0.18f, 0.045f, length + 20f), new Vector3(boundary, 0.0225f, 0f), Palette.WorksYellow);
 
         // barriere bianche/rosse nel tratto centrale, con lampeggiante ogni 10 m
         var index = 0;
