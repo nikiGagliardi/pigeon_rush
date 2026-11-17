@@ -10,15 +10,37 @@ public partial class Vehicle : Hazard
     private const float FlashOnTime = 0.14f;
     private const float FlashOffTime = 0.12f;
 
+    // cambio corsia: freccia → manovra
+    public const float SignalTime = 1.5f;
+    private const float BlinkPeriod = 0.5f;
+    private const float MaxSteerYaw = 0.1f; // ~6°
+
+    private enum LaneChangeState
+    {
+        None,
+        Signaling,
+        Moving,
+    }
+
     private readonly MeshInstance3D _body;
     private readonly MeshInstance3D _splat;
     private readonly Node3D _highBeams;
     private readonly MeshInstance3D[] _flares = new MeshInstance3D[2];
     private readonly MeshInstance3D[] _beams = new MeshInstance3D[2];
 
+    private readonly Node3D[] _indicators = new Node3D[2]; // 0 = sinistra (-X), 1 = destra (+X)
+
     private int _flashesLeft;
     private float _flashTimer;
     private bool _flashOn;
+
+    private LaneChangeState _laneState;
+    private int _targetLane;
+    private float _fromX;
+    private float _toX;
+    private float _laneTimer;
+    private float _moveProgress;
+    private float _blink;
 
     public VehicleKind Kind { get; private set; }
     public VehicleSpec Spec { get; private set; } = VehicleCatalog.Car;
@@ -27,6 +49,14 @@ public partial class Vehicle : Hazard
 
     /// <summary>Ha già lampeggiato in questo passaggio (un avvertimento per veicolo).</summary>
     public bool HasFlashed { get; private set; }
+
+    public bool IsChangingLane => _laneState != LaneChangeState.None;
+
+    /// <summary>Corsia di destinazione durante un cambio corsia, altrimenti la corsia attuale.</summary>
+    public int TargetLane => IsChangingLane ? _targetLane : Lane;
+
+    /// <summary>Durata della manovra: i mezzi pesanti sono più lenti.</summary>
+    public float MoveTime => Kind is VehicleKind.Truck or VehicleKind.Bus ? 1.8f : 1.3f;
 
     public Vehicle()
     {
@@ -57,6 +87,18 @@ public partial class Vehicle : Hazard
             };
             _highBeams.AddChild(_flares[i]);
             _highBeams.AddChild(_beams[i]);
+
+            // freccia: lampadina sull'angolo anteriore + ripetitore laterale + bagliore
+            _indicators[i] = new Node3D { Visible = false };
+            _indicators[i].AddChild(new MeshInstance3D { Mesh = IndicatorVisuals.Lamp, Name = "Front" });
+            _indicators[i].AddChild(new MeshInstance3D { Mesh = IndicatorVisuals.Lamp, Name = "Side", Scale = new Vector3(0.4f, 0.8f, 1.2f) });
+            _indicators[i].AddChild(new MeshInstance3D
+            {
+                Mesh = IndicatorVisuals.Flare,
+                Name = "Glow",
+                CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            });
+            AddChild(_indicators[i]);
         }
     }
 
@@ -74,6 +116,11 @@ public partial class Vehicle : Hazard
         _body.Mesh = VehicleMeshes.Get(kind, variant);
         _splat.Visible = false;
         Position = new Vector3(x, 0f, z);
+        Rotation = Vector3.Zero;
+        _laneState = LaneChangeState.None;
+        _indicators[0].Visible = false;
+        _indicators[1].Visible = false;
+        PlaceIndicators();
 
         LocalBoxes.Clear();
         LocalBoxes.Add(new Aabb(
@@ -89,6 +136,63 @@ public partial class Vehicle : Hazard
             var side = i == 0 ? -1f : 1f;
             _flares[i].Position = new Vector3(side * Spec.HeadlightX, Spec.HeadlightY, front + 0.2f);
             _beams[i].Position = new Vector3(side * Spec.HeadlightX, Spec.HeadlightY, front + HighBeamVisuals.BeamLength * 0.5f);
+        }
+    }
+
+    /// <summary>Avvia un cambio corsia: prima la freccia, poi la manovra.</summary>
+    public void StartLaneChange(int targetLane)
+    {
+        _targetLane = targetLane;
+        _fromX = Position.X;
+        _toX = GameConfig.LaneX(targetLane) + (Position.X - GameConfig.LaneX(Lane)); // conserva la piccola variazione nella corsia
+        _laneState = LaneChangeState.Signaling;
+        _laneTimer = SignalTime;
+        _blink = 0f;
+    }
+
+    public void TickLaneChange(float dt)
+    {
+        if (_laneState == LaneChangeState.None)
+            return;
+
+        // la freccia lampeggia sia durante l'avviso sia durante la manovra
+        _blink += dt;
+        var side = _toX > _fromX ? 1 : 0;
+        _indicators[side].Visible = Mathf.PosMod(_blink, BlinkPeriod) < BlinkPeriod * 0.5f;
+
+        if (_laneState == LaneChangeState.Signaling)
+        {
+            _laneTimer -= dt;
+            if (_laneTimer <= 0f)
+            {
+                _laneState = LaneChangeState.Moving;
+                _moveProgress = 0f;
+            }
+
+            return;
+        }
+
+        _moveProgress = Mathf.Min(1f, _moveProgress + dt / MoveTime);
+        var eased = Mathf.SmoothStep(0f, 1f, _moveProgress);
+        Position = new Vector3(Mathf.Lerp(_fromX, _toX, eased), Position.Y, Position.Z);
+
+        // leggera sterzata: il muso punta verso la corsia di destinazione e poi si raddrizza
+        var steer = Mathf.Sin(_moveProgress * Mathf.Pi) * MaxSteerYaw * (_toX > _fromX ? 1f : -1f);
+        Rotation = new Vector3(0f, steer, 0f);
+
+        // a metà manovra il mezzo "appartiene" già alla nuova corsia
+        if (eased >= 0.5f && Lane != _targetLane)
+        {
+            Lane = _targetLane;
+            CellMask = LaneMask(Lane, 0) | (Spec.BlocksMid ? LaneMask(Lane, 1) : 0);
+        }
+
+        if (_moveProgress >= 1f)
+        {
+            _laneState = LaneChangeState.None;
+            Rotation = Vector3.Zero;
+            _indicators[0].Visible = false;
+            _indicators[1].Visible = false;
         }
     }
 
@@ -142,6 +246,21 @@ public partial class Vehicle : Hazard
         var overlapX = pigeon.End.X > Position.X - halfWidth - 0.2f && pigeon.Position.X < Position.X + halfWidth + 0.2f;
         var belowRoof = pigeon.Position.Y < Spec.Height + 0.2f;
         return overlapX && belowRoof;
+    }
+
+    private void PlaceIndicators()
+    {
+        var front = Spec.Length * 0.5f;
+        for (var i = 0; i < 2; i++)
+        {
+            var side = i == 0 ? -1f : 1f;
+            var cornerX = side * (Spec.Width * 0.5f - 0.1f);
+            var y = Spec.HeadlightY;
+            var indicator = _indicators[i];
+            indicator.GetNode<MeshInstance3D>("Front").Position = new Vector3(cornerX, y, front + 0.04f);
+            indicator.GetNode<MeshInstance3D>("Side").Position = new Vector3(side * (Spec.Width * 0.5f + 0.03f), y + 0.1f, front - 0.7f);
+            indicator.GetNode<MeshInstance3D>("Glow").Position = new Vector3(cornerX, y, front + 0.25f);
+        }
     }
 
     public void MarkHit(Vector3 worldPoint)

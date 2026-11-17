@@ -12,8 +12,7 @@ Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia,
 
 Se usi una versione di Godot diversa dalla 4.7.2, aggiorna l'`Sdk` in `PigeonRush.csproj` (es. `Godot.NET.Sdk/4.7.1`).
 
-> **Mobile:** il target è `net10.0`. Il supporto ufficiale Godot è su .NET 8; su desktop .NET 10 funziona. Prima di spingere sul mobile fai subito un export Android di prova: se dà problemi, aggiungi
-> `<TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>`.
+> **Target framework:** desktop su `net10.0`, Android su `net9.0` (condizione nel `.csproj`), perché il template di export Android di Godot supporta solo .NET 9. Il codice usa solo API disponibili in entrambe le versioni.
 
 ## Comandi
 
@@ -33,6 +32,7 @@ Se usi una versione di Godot diversa dalla 4.7.2, aggiorna l'`Sdk` in `PigeonRus
 - **Un colpo e sei fuori:** al primo impatto con un mezzo o un ostacolo il piccione è spacciato. Niente vite, niente invulnerabilità.
 - **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3. Il contatore sta in basso al centro (icone + `6/10`, rosso lampeggiante quando è vuoto) e, su touch, anche sul pulsante DROP.
 - **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. Lampeggia solo il primo mezzo della corsia: quelli dietro non ti vedono.
+- **Cambi di corsia:** ogni tanto un mezzo mette la freccia (1.5 s) e si sposta nella corsia accanto. È raro (ogni 10-19 s all'inizio, 6-11 s a difficoltà massima) e leale: parte solo da mezzi a 3.5-5.5 s dal piccione, solo se nella corsia di destinazione c'è spazio, mai verso una corsia chiusa da un cantiere e mai se chiuderebbe il varco minimo garantito.
 - **Gallerie (320-560 m):** soffitto a 5.6 m e ventilatori appesi, quindi niente volo alto. All'interno è buio: si vedono lampade, fari e abbaglianti. La camera si abbassa da sola prima del portale.
 - **Lavori:** chiudono la corsia sinistra o destra per 160-240 m. Le due estremità sono speculari (cartello, carrello con freccia, coni e rete in diagonale): una verso il piccione e una verso le auto, che sono quelle a cui serve davvero la chiusura. Un ponteggio con rete arancione alto 8 m (più del volo massimo) impedisce di passarci sopra: la strada si stringe davvero a due corsie, con tutto il traffico lì. La rete è un muro morbido (ti spinge, non ti uccide) e segue la diagonale dei coni. I carrelli con la freccia sono invece ostacoli veri: se sei nella corsia chiusa, spostati prima.
 - **Difficoltà:** la velocità base sale da 16 a 30 m/s; più camion e file piene nei primi 150 s.
@@ -65,6 +65,7 @@ Scripts/
 │   ├── Hazard.cs            Base ostacoli (AABB manuali, sweep anti-tunneling)
 │   ├── Vehicle.cs / VehicleCatalog.cs / VehicleMeshes.cs   (auto, furgoni, camion, bus, cabrio)
 │   ├── HighBeamVisuals.cs   Bagliori e coni additivi degli abbaglianti (nessuna luce dinamica)
+│   ├── IndicatorVisuals.cs  Frecce gialle lampeggianti per i cambi di corsia
 │   ├── AmbientTraffic.cs    Traffico scenografico sulla carreggiata opposta
 │   ├── SignGantry.cs        Portali con cartelli verdi svizzeri
 │   ├── Overpass.cs          Cavalcavia
@@ -90,14 +91,34 @@ Scripts/
 
 ## Roadmap
 
-**Fase 1 (fatta):** volo, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
+**Fase 1 (fatta):** volo, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
 
 **Fase 2:**
 - Falco che insegue se vai troppo piano
 - Polizia: se la colpisci parte il "livello ricercato" con un elicottero o un drone che ti insegue
-- Vento laterale, pioggia, ciclo giorno/notte
+- Meteo e ora del giorno (vedi sotto), vento laterale
 - Autovelox con flash accecante
 - Power-up: mega-cacca, magnete per le briciole, scudo di piume, slow-motion
 - Audio (motori in avvicinamento, effetto doppler, battito d'ali, splat)
 - Opzione controllo con inclinazione (accelerometro)
 - Skin del piccione, upgrade e classifica online
+
+### Idea: meteo e ora del giorno (non ancora implementato)
+
+Condizioni che cambiano la **distanza visiva** e l'atmosfera:
+
+| Condizione | Visibilità | Effetti |
+|---|---|---|
+| **Sole** | piena (com'è ora) | ombre nette, cielo azzurro |
+| **Nebbia** | molto ridotta | nebbia fitta e grigia; i mezzi spuntano all'improvviso, fari e abbaglianti diventano l'avviso principale |
+| **Pioggia** | ridotta | gocce attorno alla camera, strada bagnata e lucida con i riflessi dei fari, spruzzi dietro i camion, cielo coperto, lampi e tuoni ogni tanto |
+| **Notte** | ridotta ai fari | sole spento, cielo scuro con stelle, lampioni accesi, anabbaglianti sempre accesi con cono di luce, fanalini rossi più visibili sull'altra carreggiata |
+
+Si possono combinare, ad esempio notte con pioggia.
+
+Note di design:
+- Con meno visibilità servono più avvisi: abbaglianti, frecce e lampeggianti del cantiere sono già unlit e restano leggibili. Si potrebbero rendere più marcati quando la visibilità è bassa.
+- Il varco garantito resta uguale. Si potrebbe compensare la visibilità ridotta allungando un po' la distanza tra le file o con un leggero bonus punti ("Foggy x1.2", "Night x1.3").
+- Il cambio di meteo potrebbe avvenire all'uscita delle gallerie, che è il momento naturale per una transizione.
+- Ogni condizione andrebbe definita come preset (densità e colore della nebbia, energia di sole e ambiente, colore del cielo, luci accese) con transizioni graduali, riusando il sistema che già scurisce le gallerie.
+- Su mobile la pioggia va fatta con poche particelle legate alla camera, senza luci dinamiche.

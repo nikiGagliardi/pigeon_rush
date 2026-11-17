@@ -16,6 +16,13 @@ public partial class TrafficSpawner : Node3D
     private const int MinFreeCells = 2;
     private const float ArrivalWindow = 0.75f;
 
+    // cambio corsia: solo mezzi lontani (in secondi dal piccione), raramente
+    private const float LaneChangeMinTime = 3.5f;
+    private const float LaneChangeMaxTime = 5.5f;
+    private const float LaneChangeMaxAhead = 280f;
+    private const float LaneChangeClearance = 12f;   // spazio libero davanti/dietro nella corsia di destinazione
+    private const float RowNeighbourhood = 12f;      // mezzi considerati "sulla stessa fila" per il varco
+
     // finestra in cui un mezzo "vede" il piccione davanti e lampeggia
     private const float FlashMinAhead = 15f;
     private const float FlashMaxAhead = 85f;
@@ -36,6 +43,7 @@ public partial class TrafficSpawner : Node3D
     private float _structureCountdown = 90f;
     private float _grace = GameConfig.StartGrace;
     private int _prevFreeMask = Cells.All;
+    private float _laneChangeCooldown = 12f;
 
     public bool SpawningEnabled { get; set; }
     public IReadOnlyList<Vehicle> Vehicles => _vehicles;
@@ -83,6 +91,14 @@ public partial class TrafficSpawner : Node3D
         {
             SpawnRow(session, -_rowCountdown);
             _rowCountdown += RowSpacing(session);
+        }
+
+        _laneChangeCooldown -= dt;
+        if (_laneChangeCooldown <= 0f)
+        {
+            _laneChangeCooldown = TryStartLaneChange(session)
+                ? Mathf.Lerp(10f, 6f, session.Difficulty) + Range(0f, 5f)
+                : 1f; // nessun candidato valido: riprova tra poco
         }
     }
 
@@ -185,6 +201,7 @@ public partial class TrafficSpawner : Node3D
             var vehicle = _vehicles[i];
             vehicle.Position += trafficDelta;
             vehicle.TickLights(dt);
+            vehicle.TickLaneChange(dt);
             if (vehicle.RearZ > GameConfig.DespawnZ)
             {
                 _vehiclePool.Release(vehicle);
@@ -324,22 +341,7 @@ public partial class TrafficSpawner : Node3D
         var difficulty = session.Difficulty;
         var z = GameConfig.SpawnZ + overshoot;
 
-        // Strutture che occuperanno la posizione del piccione quando arriva questa riga
-        var pigeonSpeed = Mathf.Max(1f, speed.PigeonSpeed);
-        var rowArrival = -z / Mathf.Max(1f, speed.ApproachSpeed);
-        var structureMask = 0;
-        var closedLanes = 0;
-        foreach (var structure in _structures)
-        {
-            var start = -structure.FrontZ / pigeonSpeed;
-            var end = -structure.RearZ / pigeonSpeed;
-            if (rowArrival > start - ArrivalWindow && rowArrival < end + ArrivalWindow)
-                structureMask |= structure.CellMask;
-
-            // corsia chiusa: nessun mezzo che attraverserebbe il cantiere in vista
-            if (structure is RoadWorks works && works.BlocksVehicle(z, speed.ApproachSpeed, pigeonSpeed))
-                closedLanes |= 1 << works.ClosedLane;
-        }
+        var structureMask = StructureMaskAt(z, speed, out var closedLanes);
 
         // Contenuto delle corsie: -1 = vuota
         Span<int> kinds = stackalloc int[GameConfig.LaneCount];
@@ -394,6 +396,106 @@ public partial class TrafficSpawner : Node3D
 
         TrySpawnPickup(session, freeMask, z);
     }
+
+    /// <summary>
+    /// Celle occupate dalle strutture quando un mezzo che ora è in <paramref name="z"/> arriverà al piccione,
+    /// e corsie chiuse da cantieri che quel mezzo attraverserebbe in vista.
+    /// </summary>
+    private int StructureMaskAt(float z, SpeedController speed, out int closedLanes)
+    {
+        var pigeonSpeed = Mathf.Max(1f, speed.PigeonSpeed);
+        var arrival = -z / Mathf.Max(1f, speed.ApproachSpeed);
+        var mask = 0;
+        closedLanes = 0;
+        foreach (var structure in _structures)
+        {
+            var start = -structure.FrontZ / pigeonSpeed;
+            var end = -structure.RearZ / pigeonSpeed;
+            if (arrival > start - ArrivalWindow && arrival < end + ArrivalWindow)
+                mask |= structure.CellMask;
+
+            if (structure is RoadWorks works && works.BlocksVehicle(z, speed.ApproachSpeed, pigeonSpeed))
+                closedLanes |= 1 << works.ClosedLane;
+        }
+
+        return mask;
+    }
+
+    /// <summary>
+    /// Sceglie a caso un mezzo lontano che può spostarsi in una corsia adiacente in sicurezza.
+    /// Regole: spazio libero nella corsia di destinazione, niente corsie chiuse da cantieri,
+    /// e la "fila" del mezzo deve continuare a lasciare almeno <see cref="MinFreeCells"/> celle libere.
+    /// </summary>
+    private bool TryStartLaneChange(GameSession session)
+    {
+        if (_vehicles.Count == 0)
+            return false;
+
+        var speed = session.Speed;
+        var approach = Mathf.Max(1f, speed.ApproachSpeed);
+        var minAhead = LaneChangeMinTime * approach;
+        var maxAhead = Mathf.Min(LaneChangeMaxAhead, LaneChangeMaxTime * approach);
+
+        var start = _rng.Next(_vehicles.Count);
+        for (var n = 0; n < _vehicles.Count; n++)
+        {
+            var vehicle = _vehicles[(start + n) % _vehicles.Count];
+            if (vehicle.IsChangingLane)
+                continue;
+
+            var ahead = -vehicle.FrontZ; // il piccione è a Z = 0
+            if (ahead < minAhead || ahead > maxAhead)
+                continue;
+
+            // prova prima una direzione a caso, poi l'altra
+            var first = _rng.NextSingle() < 0.5f ? -1 : 1;
+            for (var d = 0; d < 2; d++)
+            {
+                var target = vehicle.Lane + (d == 0 ? first : -first);
+                if (CanChangeLane(vehicle, target, speed))
+                {
+                    vehicle.StartLaneChange(target);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool CanChangeLane(Vehicle vehicle, int target, SpeedController speed)
+    {
+        if (target < 0 || target >= GameConfig.LaneCount)
+            return false;
+
+        var structureMask = StructureMaskAt(vehicle.Position.Z, speed, out var closedLanes);
+        if ((closedLanes & (1 << target)) != 0)
+            return false; // corsia chiusa da un cantiere
+
+        var blocked = structureMask;
+        foreach (var other in _vehicles)
+        {
+            if (other == vehicle)
+                continue;
+
+            var dz = Mathf.Abs(other.Position.Z - vehicle.Position.Z);
+
+            // spazio libero nella corsia di destinazione (anche per chi ci sta già entrando)
+            var gap = (other.Spec.Length + vehicle.Spec.Length) * 0.5f + LaneChangeClearance;
+            if (dz < gap && (other.Lane == target || other.TargetLane == target))
+                return false;
+
+            // occupazione della "fila": chi cambia corsia conta su entrambe
+            if (dz < RowNeighbourhood)
+                blocked |= VehicleMask(other.Lane, other.Spec) | VehicleMask(other.TargetLane, other.Spec);
+        }
+
+        blocked |= VehicleMask(target, vehicle.Spec) | VehicleMask(vehicle.Lane, vehicle.Spec);
+        return Cells.CountOf(Cells.All & ~blocked) >= MinFreeCells;
+    }
+
+    private static int VehicleMask(int lane, VehicleSpec spec)
+        => Cells.Of(lane, 0) | (spec.BlocksMid ? Cells.Of(lane, 1) : 0);
 
     private void TrySpawnPickup(GameSession session, int freeMask, float z)
     {

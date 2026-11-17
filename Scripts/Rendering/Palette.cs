@@ -31,6 +31,7 @@ public static class Palette
     public static readonly Color Trim = new("2f3640");
     public static readonly Color Headlight = new("fff6d5");
     public static readonly Color Taillight = new("ff2a2a");
+    public static readonly Color Indicator = new("ffe600"); // giallo: si distingue dai fari bianchi
     public static readonly Color DestinationDisplay = new("ffb020");
     public static readonly Color Chrome = new("c8d0d8");
     public static readonly Color Seat = new("5a1f1f");
@@ -64,8 +65,20 @@ public static class Palette
     public static readonly Color PigeonWing = new("8f99a8");
     public static readonly Color PigeonWingBar = new("3e4552");
     public static readonly Color PigeonTail = new("4a5260");
-    public static readonly Color Beak = new("d9a066");
+    public static readonly Color PigeonBelly = new("8e98a6");
+    public static readonly Color PigeonChest = new("8a8798");
+    public static readonly Color PigeonRump = new("a7b0bc");
+    public static readonly Color PigeonSecondary = new("7f8998");
+    public static readonly Color PigeonPrimaryDark = new("3e4552");
+    public static readonly Color PigeonPrimaryMid = new("58616e");
+    public static readonly Color PigeonPrimaryLight = new("707a88");
+    public static readonly Color PigeonTailBand = new("2f343d");
+    public static readonly Color Beak = new("4a4343");
+    public static readonly Color BeakTip = new("2e2a2a");
+    public static readonly Color Cere = new("e8e4dc");
+    public static readonly Color EyeRing = new("c9a39b");
     public static readonly Color Eye = new("ff8c1a");
+    public static readonly Color Pupil = new("111111");
     public static readonly Color Foot = new("e07a7a");
 
     // Gameplay

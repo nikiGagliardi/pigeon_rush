@@ -12,6 +12,7 @@ public static class HighBeamVisuals
 
     private static QuadMesh? _flare;
     private static CylinderMesh? _beam;
+    private static GradientTexture2D? _glow;
 
     public static QuadMesh Flare => _flare ??= new QuadMesh
     {
@@ -22,19 +23,22 @@ public static class HighBeamVisuals
             BlendMode = BaseMaterial3D.BlendModeEnum.Add,
             BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled,
             AlbedoColor = new Color(1f, 0.96f, 0.85f),
-            AlbedoTexture = new GradientTexture2D
-            {
-                Width = 64,
-                Height = 64,
-                Fill = GradientTexture2D.FillEnum.Radial,
-                FillFrom = new Vector2(0.5f, 0.5f),
-                FillTo = new Vector2(0.5f, 0f),
-                Gradient = new Gradient
-                {
-                    Offsets = new[] { 0f, 0.18f, 1f },
-                    Colors = new[] { new Color(1f, 1f, 1f), new Color(0.75f, 0.7f, 0.55f), new Color(0f, 0f, 0f) },
-                },
-            },
+            AlbedoTexture = RadialGlow,
+        },
+    };
+
+    /// <summary>Gradiente radiale bianco → nero: con blend additivo il nero non aggiunge nulla.</summary>
+    public static GradientTexture2D RadialGlow => _glow ??= new GradientTexture2D
+    {
+        Width = 64,
+        Height = 64,
+        Fill = GradientTexture2D.FillEnum.Radial,
+        FillFrom = new Vector2(0.5f, 0.5f),
+        FillTo = new Vector2(0.5f, 0f),
+        Gradient = new Gradient
+        {
+            Offsets = new[] { 0f, 0.18f, 1f },
+            Colors = new[] { new Color(1f, 1f, 1f), new Color(0.75f, 0.7f, 0.55f), new Color(0f, 0f, 0f) },
         },
     };
 
