@@ -20,8 +20,23 @@ public partial class TouchControls : Control
     private Vector2 _knob;
     private bool _poopQueued;
     private float _poopFlash;
+    private int _ammo = -1;
 
     public Vector2 MoveVector { get; private set; }
+
+    /// <summary>Cacche disponibili, mostrate sul pulsante DROP.</summary>
+    public int Ammo
+    {
+        get => _ammo;
+        set
+        {
+            if (value == _ammo)
+                return;
+            _ammo = value;
+            if (Visible)
+                QueueRedraw();
+        }
+    }
 
     public static bool IsTouchDevice => DisplayServer.IsTouchscreenAvailable();
 
@@ -126,15 +141,18 @@ public partial class TouchControls : Control
         }
 
         var button = new Vector2(size.X - 170f, size.Y - 170f);
-        var fill = Palette.Poop;
-        fill.A = 0.3f + _poopFlash * 0.4f;
+        var empty = _ammo == 0;
+        var fill = empty ? Palette.Danger : Palette.Poop;
+        fill.A = (empty ? 0.25f : 0.3f) + _poopFlash * 0.4f;
         DrawCircle(button, PoopButtonRadius * (1f + _poopFlash * 0.12f), fill);
         DrawArc(button, PoopButtonRadius, 0f, Mathf.Tau, 48, new Color(1f, 1f, 1f, 0.6f), 3f);
 
         var font = GetThemeDefaultFont();
-        const int fontSize = 26;
-        DrawString(font, button + new Vector2(-PoopButtonRadius, fontSize * 0.35f), "DROP",
-            HorizontalAlignment.Center, PoopButtonRadius * 2f, fontSize, new Color(0.15f, 0.12f, 0.08f));
+        var ink = new Color(0.15f, 0.12f, 0.08f);
+        DrawString(font, button + new Vector2(-PoopButtonRadius, -6f), "DROP",
+            HorizontalAlignment.Center, PoopButtonRadius * 2f, 24, ink);
+        DrawString(font, button + new Vector2(-PoopButtonRadius, 34f), _ammo >= 0 ? _ammo.ToString() : "",
+            HorizontalAlignment.Center, PoopButtonRadius * 2f, 40, empty ? Colors.White : ink);
     }
 
     private void UpdateVector()

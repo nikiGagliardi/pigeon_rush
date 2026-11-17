@@ -15,15 +15,19 @@ public partial class Hud : Control
     private Label _speed = null!;
     private Label _lock = null!;
     private Label _lowFly = null!;
-    private IconBar _lives = null!;
+    private Label _ammoCount = null!;
     private IconBar _ammo = null!;
     private IconBar _boost = null!;
+    private PanelContainer _ammoPanel = null!;
 
     private long _lastScore = -1;
     private int _lastDistance = -1;
     private int _lastCombo = -1;
     private int _lastBoost = -1;
+    private int _lastAmmo = -1;
     private float _comboPop;
+    private float _ammoPop;
+    private float _emptyBlink;
 
     public event Action? PausePressed;
 
@@ -44,31 +48,25 @@ public partial class Hud : Control
         AddChild(left);
         left.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft, LayoutPresetMode.Minsize, 22);
 
-        // --- in alto a destra: piume, cacca, boost, pausa ---
-        var right = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Begin };
+        // --- in alto a destra: pausa e boost ---
+        var right = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
         right.AddThemeConstantOverride("separation", 8);
 
-        var topRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.End };
-        topRow.AddThemeConstantOverride("separation", 16);
-        _lives = new IconBar { Max = GameConfig.MaxLives, Shape = IconBar.IconShape.Feather, OnColor = Colors.White, IconSize = 34f };
-        topRow.AddChild(_lives);
         var pause = new Button { Text = "II", FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(64f, 56f) };
         pause.AddThemeFontSizeOverride("font_size", 26);
         pause.AddThemeStyleboxOverride("normal", UiStyle.Flat(new Color(0f, 0f, 0f, 0.35f), 12));
         pause.AddThemeStyleboxOverride("hover", UiStyle.Flat(new Color(0f, 0f, 0f, 0.5f), 12));
         pause.AddThemeStyleboxOverride("pressed", UiStyle.Flat(new Color(0f, 0f, 0f, 0.6f), 12));
         pause.Pressed += () => PausePressed?.Invoke();
-        topRow.AddChild(pause);
-        right.AddChild(topRow);
+        var pauseRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.End };
+        pauseRow.AddChild(pause);
+        right.AddChild(pauseRow);
 
-        var ammoRow = MakeRow("POOP", out var ammoHolder);
-        _ammo = new IconBar { Max = GameConfig.MaxAmmo, Shape = IconBar.IconShape.Circle, OnColor = Palette.Poop, IconSize = 18f, Gap = 4f };
-        ammoHolder.AddChild(_ammo);
-        right.AddChild(ammoRow);
-
-        var boostRow = MakeRow("BOOST", out var boostHolder);
+        var boostRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.End };
+        boostRow.AddThemeConstantOverride("separation", 10);
+        boostRow.AddChild(UiStyle.MakeLabel("BOOST", 18, new Color(1f, 1f, 1f, 0.8f)));
         _boost = new IconBar { Max = GameConfig.MaxBoostStacks, Shape = IconBar.IconShape.Segment, OnColor = Palette.Info, IconSize = 30f, Gap = 4f };
-        boostHolder.AddChild(_boost);
+        boostRow.AddChild(_boost);
         right.AddChild(boostRow);
 
         _speed = UiStyle.MakeLabel("", 20, Palette.Info, HorizontalAlignment.Right);
@@ -85,16 +83,18 @@ public partial class Hud : Control
         _combo.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterTop, LayoutPresetMode.Minsize, 24);
         _combo.PivotOffset = new Vector2(0f, 30f);
 
-        // --- centro in basso: suggerimenti ---
+        // --- centro in basso: suggerimenti + pannello munizioni ---
         var bottom = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.End };
+        bottom.AddThemeConstantOverride("separation", 6);
         _lock = UiStyle.MakeLabel("TARGET LOCKED! Drop now", 30, Palette.Reticle, HorizontalAlignment.Center);
         _lowFly = UiStyle.MakeLabel("LOW FLYING  x1.5", 22, Palette.Info, HorizontalAlignment.Center);
         bottom.AddChild(_lock);
         bottom.AddChild(_lowFly);
+        bottom.AddChild(BuildAmmoPanel());
         AddChild(bottom);
         bottom.GrowHorizontal = GrowDirection.Both;
         bottom.GrowVertical = GrowDirection.Begin;
-        bottom.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom, LayoutPresetMode.Minsize, 36);
+        bottom.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom, LayoutPresetMode.Minsize, 24);
         _lock.Modulate = new Color(1f, 1f, 1f, 0f);
         _lowFly.Modulate = new Color(1f, 1f, 1f, 0f);
     }
@@ -117,8 +117,7 @@ public partial class Hud : Control
             _distance.Text = $"{UiFormat.Number(metres)} m";
         }
 
-        _lives.SetValue(session.Lives);
-        _ammo.SetValue(session.Ammo);
+        RefreshAmmo(dt, session.Ammo);
 
         var stacks = session.Speed.BoostStacks;
         _boost.SetValue(stacks);
@@ -146,21 +145,70 @@ public partial class Hud : Control
         FadeTo(_lowFly, lowFlying ? 1f : 0f, dt);
     }
 
+    /// <summary>Pannello ben visibile con le cacche disponibili: icone + "6/10".</summary>
+    private Control BuildAmmoPanel()
+    {
+        _ammoPanel = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
+        _ammoPanel.AddThemeStyleboxOverride("panel", UiStyle.Flat(new Color(0f, 0f, 0f, 0.45f), 16, 10f));
+
+        var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.Center };
+        row.AddThemeConstantOverride("separation", 12);
+        row.AddChild(UiStyle.MakeLabel("POOP", 22, new Color(1f, 1f, 1f, 0.85f)));
+        _ammo = new IconBar
+        {
+            Max = GameConfig.MaxAmmo,
+            Shape = IconBar.IconShape.Poop,
+            OnColor = Palette.Poop,
+            OffColor = new Color(1f, 1f, 1f, 0.15f),
+            IconSize = 30f,
+            Gap = 4f,
+        };
+        row.AddChild(_ammo);
+        _ammoCount = UiStyle.MakeLabel("", 30, Colors.White);
+        _ammoCount.CustomMinimumSize = new Vector2(78f, 0f);
+        row.AddChild(_ammoCount);
+        _ammoPanel.AddChild(row);
+
+        var holder = new CenterContainer { MouseFilter = MouseFilterEnum.Ignore };
+        holder.AddChild(_ammoPanel);
+        return holder;
+    }
+
+    private void RefreshAmmo(float dt, int ammo)
+    {
+        if (ammo != _lastAmmo)
+        {
+            if (ammo > _lastAmmo && _lastAmmo >= 0)
+                _ammoPop = 1f; // ricarica dalle briciole
+            _lastAmmo = ammo;
+            _ammo.SetValue(ammo);
+            _ammoCount.Text = $"{ammo}/{GameConfig.MaxAmmo}";
+        }
+
+        _ammoPop = Mathf.Max(0f, _ammoPop - dt * 3f);
+
+        if (ammo == 0)
+        {
+            // vuoto: lampeggia in rosso
+            _emptyBlink += dt;
+            var on = Mathf.PosMod(_emptyBlink, 0.5f) < 0.25f;
+            _ammoCount.AddThemeColorOverride("font_color", on ? Palette.Danger : Colors.White);
+            _ammoPanel.Modulate = new Color(1f, on ? 0.6f : 1f, on ? 0.6f : 1f);
+        }
+        else
+        {
+            _emptyBlink = 0f;
+            _ammoCount.AddThemeColorOverride("font_color", _ammoPop > 0f ? Palette.Crumb : Colors.White);
+            var glow = 1f + _ammoPop * 0.4f;
+            _ammoPanel.Modulate = new Color(glow, glow, glow);
+        }
+    }
+
     private static void FadeTo(Control control, float alpha, float dt)
     {
         var current = control.Modulate.A;
         var next = Mathf.MoveToward(current, alpha, dt * 6f);
         if (!Mathf.IsEqualApprox(current, next))
             control.Modulate = new Color(1f, 1f, 1f, next);
-    }
-
-    private static HBoxContainer MakeRow(string caption, out HBoxContainer holder)
-    {
-        var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore, Alignment = BoxContainer.AlignmentMode.End };
-        row.AddThemeConstantOverride("separation", 10);
-        row.AddChild(UiStyle.MakeLabel(caption, 18, new Color(1f, 1f, 1f, 0.8f)));
-        holder = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-        row.AddChild(holder);
-        return row;
     }
 }

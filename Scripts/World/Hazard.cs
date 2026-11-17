@@ -24,7 +24,7 @@ public abstract partial class Hazard : Node3D
     public bool TouchedPigeon { get; set; }
 
     /// <summary>Estremo posteriore (Z minima) in coordinate mondo, usato per il despawn.</summary>
-    public float RearZ
+    public virtual float RearZ
     {
         get
         {

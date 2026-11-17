@@ -99,7 +99,7 @@ public partial class Screens : Control
             ? "Left side: drag to fly  •  Right side: tap to drop"
             : "WASD / arrows: fly  •  Space: drop  •  Esc: pause\nGamepad: left stick  •  A / right trigger";
         box.AddChild(UiStyle.MakeLabel(help, 20, new Color(1f, 1f, 1f, 0.75f), HorizontalAlignment.Center));
-        box.AddChild(UiStyle.MakeLabel("Splat vehicles to fly faster. Crumbs refill your poop.", 18,
+        box.AddChild(UiStyle.MakeLabel("One hit and you're out! Splat vehicles to fly faster, grab crumbs to refill your poop.", 18,
             new Color(1f, 1f, 1f, 0.6f), HorizontalAlignment.Center));
     }
 

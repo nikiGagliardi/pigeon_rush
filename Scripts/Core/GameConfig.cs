@@ -61,10 +61,6 @@ public static class GameConfig
     public const float LockMinAhead = 2f;
     public const float LockMaxAhead = 32f;
 
-    // --- Vite ---
-    public const int MaxLives = 3;
-    public const float InvulnerableTime = 1.6f;
-
     // --- Punteggio ---
     public const float ComboWindow = 3.5f;
     public const int MaxComboMultiplier = 5;

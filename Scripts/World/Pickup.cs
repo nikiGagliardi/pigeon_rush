@@ -7,16 +7,12 @@ public enum PickupKind
 {
     /// <summary>Briciole: ricaricano la cacca.</summary>
     Crumbs,
-
-    /// <summary>Piuma: +1 vita.</summary>
-    Feather,
 }
 
 /// <summary>Oggetto raccoglibile sospeso in aria, ruota e ondeggia.</summary>
 public partial class Pickup : Node3D
 {
     private static ArrayMesh? _crumbsMesh;
-    private static ArrayMesh? _featherMesh;
 
     private readonly MeshInstance3D _mesh;
     private float _phase;
@@ -36,7 +32,7 @@ public partial class Pickup : Node3D
         Position = position;
         _baseY = position.Y;
         _phase = position.X;
-        _mesh.Mesh = kind == PickupKind.Crumbs ? CrumbsMesh : FeatherMesh;
+        _mesh.Mesh = CrumbsMesh;
     }
 
     public void Animate(float dt)
@@ -53,12 +49,5 @@ public partial class Pickup : Node3D
         .Box(new Vector3(0.14f, 0.12f, 0.16f), new Vector3(0.05f, 0.15f, -0.2f), Palette.CrumbDark, new Vector3(25f, 10f, 0f))
         .Add(new TorusMesh { InnerRadius = 0.48f, OuterRadius = 0.56f, Rings = 12, RingSegments = 4 },
             new Transform3D(Basis.FromEuler(new Vector3(Mathf.Pi * 0.5f, 0f, 0f)), Vector3.Zero), Palette.Gold, unlit: true)
-        .Build();
-
-    private static ArrayMesh FeatherMesh => _featherMesh ??= new LowPolyBuilder()
-        .Sphere(0.3f, new Vector3(0f, 0.05f, 0f), new Vector3(0.45f, 0.1f, 1.6f), new Color("ffffff"), 6, 3, new Vector3(0f, 0f, 70f))
-        .Cylinder(0.02f, 0.02f, 0.9f, Vector3.Zero, new Color("e0e0e0"), 4, new Vector3(90f, 0f, 0f))
-        .Add(new TorusMesh { InnerRadius = 0.55f, OuterRadius = 0.63f, Rings = 12, RingSegments = 4 },
-            new Transform3D(Basis.FromEuler(new Vector3(Mathf.Pi * 0.5f, 0f, 0f)), Vector3.Zero), Palette.Info, unlit: true)
         .Build();
 }

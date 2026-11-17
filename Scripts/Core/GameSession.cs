@@ -8,12 +8,12 @@ public sealed class GameSession
     public SpeedController Speed { get; } = new();
     public ScoreService Score { get; } = new();
 
-    public int Lives { get; private set; } = GameConfig.MaxLives;
     public int Ammo { get; private set; } = GameConfig.StartAmmo;
     public float Elapsed { get; private set; }
 
     public float Difficulty => Mathf.Clamp(Elapsed / GameConfig.DifficultyRampTime, 0f, 1f);
-    public bool IsOver => Lives <= 0;
+    /// <summary>Regola del gioco: al primo colpo il piccione è spacciato.</summary>
+    public bool IsOver { get; private set; }
 
     public void Tick(float dt)
     {
@@ -31,20 +31,9 @@ public sealed class GameSession
 
     public void AddAmmo(int amount) => Ammo = Mathf.Min(GameConfig.MaxAmmo, Ammo + amount);
 
-    /// <returns>true se la piuma è stata aggiunta (false se già al massimo).</returns>
-    public bool AddLife()
+    public void Crash()
     {
-        if (Lives >= GameConfig.MaxLives)
-            return false;
-        Lives++;
-        return true;
-    }
-
-    public void TakeDamage()
-    {
-        if (Lives <= 0)
-            return;
-        Lives--;
+        IsOver = true;
         Speed.ClearBoost();
         Score.BreakCombo();
     }

@@ -92,17 +92,10 @@ public partial class TrafficSpawner : Node3D
         var pigeonBox = pigeon.Bounds;
         var pigeonZ = pigeon.Position.Z;
 
-        foreach (var vehicle in _vehicles)
-        {
-            if (!vehicle.HasFlashed && !vehicle.IsHit)
-            {
-                var ahead = pigeonZ - vehicle.FrontZ;
-                if (ahead > FlashMinAhead && ahead < FlashMaxAhead && vehicle.IsInPath(pigeonBox))
-                    vehicle.FlashHighBeams(_rng.Next(2, 4)); // 2 o 3 lampeggi
-            }
+        FlashLeadVehicles(pigeonBox, pigeonZ);
 
+        foreach (var vehicle in _vehicles)
             ResolveHazard(vehicle, pigeon, pigeonBox, pigeonZ, trafficStep);
-        }
 
         foreach (var structure in _structures)
             ResolveHazard(structure, pigeon, pigeonBox, pigeonZ, groundStep);
@@ -120,6 +113,40 @@ public partial class TrafficSpawner : Node3D
         }
     }
 
+    /// <summary>
+    /// Abbaglianti: lampeggia solo il primo mezzo di ogni corsia (il più vicino al piccione, non ancora passato),
+    /// e solo se il piccione è sulla sua traiettoria. Quelli dietro non vedono il piccione.
+    /// </summary>
+    private void FlashLeadVehicles(Aabb pigeonBox, float pigeonZ)
+    {
+        Span<int> lead = stackalloc int[GameConfig.LaneCount];
+        lead.Fill(-1);
+        for (var i = 0; i < _vehicles.Count; i++)
+        {
+            var vehicle = _vehicles[i];
+            if (vehicle.FrontZ >= pigeonZ)
+                continue; // già accanto o dietro al piccione
+
+            var current = lead[vehicle.Lane];
+            if (current < 0 || vehicle.FrontZ > _vehicles[current].FrontZ)
+                lead[vehicle.Lane] = i;
+        }
+
+        foreach (var index in lead)
+        {
+            if (index < 0)
+                continue;
+
+            var vehicle = _vehicles[index];
+            if (vehicle.HasFlashed || vehicle.IsHit)
+                continue;
+
+            var ahead = pigeonZ - vehicle.FrontZ;
+            if (ahead > FlashMinAhead && ahead < FlashMaxAhead && vehicle.IsInPath(pigeonBox))
+                vehicle.FlashHighBeams(_rng.Next(2, 4)); // 2 o 3 lampeggi
+        }
+    }
+
     private void ResolveHazard(Hazard hazard, PigeonController pigeon, Aabb pigeonBox, float pigeonZ, float sweep)
     {
         if (hazard.PassedPigeon)
@@ -131,7 +158,7 @@ public partial class TrafficSpawner : Node3D
             var box = hazard.WorldBox(b, sweep);
             if (box.Intersects(pigeonBox))
             {
-                if (!hazard.TouchedPigeon && !pigeon.IsInvulnerable)
+                if (!hazard.TouchedPigeon)
                     PigeonHit?.Invoke(pigeon.Position);
                 hazard.TouchedPigeon = true;
             }
@@ -202,6 +229,23 @@ public partial class TrafficSpawner : Node3D
         }
     }
 
+    /// <summary>Limiti laterali di volo alla coordinata Z (le reti dei cantieri restringono la strada).</summary>
+    public void GetFlyLimits(float z, out float minX, out float maxX)
+    {
+        minX = -GameConfig.FlyHalfWidth;
+        maxX = GameConfig.FlyHalfWidth;
+        foreach (var structure in _structures)
+        {
+            if (structure is not RoadWorks works || !works.TryGetLateralLimit(z, out var limit))
+                continue;
+
+            if (works.ClosedLane == 0)
+                minX = Mathf.Max(minX, limit);
+            else
+                maxX = Mathf.Min(maxX, limit);
+        }
+    }
+
     /// <summary>Quota massima della camera alla coordinata Z indicata (gallerie).</summary>
     public float CameraCeiling(float z)
     {
@@ -249,7 +293,7 @@ public partial class TrafficSpawner : Node3D
             // il cartello "ROADWORKS" sta 40 m prima del cantiere: è lui a comparire per primo sulla linea di spawn
             works.Activate(_rng.NextSingle() < 0.5f ? 0 : GameConfig.LaneCount - 1, length, z - RoadWorksMeshes.SignAhead, _rng);
             _structures.Add(works);
-            return length + RoadWorksMeshes.SignAhead;
+            return length + RoadWorksMeshes.SignAhead * 2f; // un cartello per estremità
         }
 
         if (roll < 0.74f)
@@ -365,11 +409,8 @@ public partial class TrafficSpawner : Node3D
             if (!Cells.Has(freeMask, lane, band) || pick-- != 0)
                 continue;
 
-            var kind = session.Lives < GameConfig.MaxLives && _rng.NextSingle() < 0.08f
-                ? PickupKind.Feather
-                : PickupKind.Crumbs;
             var pickup = _pickupPool.Get();
-            pickup.Activate(kind, new Vector3(GameConfig.LaneX(lane), GameConfig.BandCenterY(band), z - 8f));
+            pickup.Activate(PickupKind.Crumbs, new Vector3(GameConfig.LaneX(lane), GameConfig.BandCenterY(band), z - 8f));
             _pickups.Add(pickup);
             return;
         }

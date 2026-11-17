@@ -2,23 +2,16 @@ using Godot;
 
 namespace PigeonRush.UI;
 
-/// <summary>Barra di icone disegnate (piume, munizioni, segmenti boost): nessuna texture necessaria.</summary>
+/// <summary>Barra di icone disegnate (munizioni, segmenti boost): nessuna texture necessaria.</summary>
 public partial class IconBar : Control
 {
     public enum IconShape
     {
         Circle,
-        Feather,
+        Poop,
         Segment,
     }
 
-    private static readonly Vector2[] FeatherShape =
-    {
-        new(0f, -0.5f), new(0.2f, -0.2f), new(0.2f, 0.2f), new(0.04f, 0.5f),
-        new(-0.04f, 0.5f), new(-0.2f, 0.2f), new(-0.2f, -0.2f),
-    };
-
-    private readonly Vector2[] _scratch = new Vector2[FeatherShape.Length];
     private int _value = -1;
 
     public int Max { get; set; } = 3;
@@ -58,14 +51,16 @@ public partial class IconBar : Control
                 case IconShape.Segment:
                     DrawRect(new Rect2(left, IconSize * 0.3f, IconSize, IconSize * 0.4f), color);
                     break;
-                case IconShape.Feather:
-                    var rotation = Mathf.DegToRad(25f);
-                    for (var p = 0; p < FeatherShape.Length; p++)
-                        _scratch[p] = center + FeatherShape[p].Rotated(rotation) * IconSize;
-                    DrawColoredPolygon(_scratch, color);
-                    DrawLine(center + new Vector2(0f, 0.55f).Rotated(rotation) * IconSize,
-                        center + new Vector2(0f, -0.35f).Rotated(rotation) * IconSize,
-                        new Color(0f, 0f, 0f, 0.35f), 2f);
+                case IconShape.Poop:
+                    // tre "gocce" impilate, con contorno scuro per leggibilità su qualsiasi sfondo
+                    var s = IconSize;
+                    var outline = new Color(0f, 0f, 0f, color.A * 0.6f);
+                    DrawCircle(center + new Vector2(0f, 0.2f * s), 0.4f * s, outline);
+                    DrawCircle(center + new Vector2(0f, 0.2f * s), 0.34f * s, color);
+                    DrawCircle(center + new Vector2(0f, -0.04f * s), 0.29f * s, outline);
+                    DrawCircle(center + new Vector2(0f, -0.04f * s), 0.24f * s, color);
+                    DrawCircle(center + new Vector2(0.02f * s, -0.25f * s), 0.18f * s, outline);
+                    DrawCircle(center + new Vector2(0.02f * s, -0.25f * s), 0.13f * s, color);
                     break;
             }
         }

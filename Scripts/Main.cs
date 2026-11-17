@@ -141,6 +141,7 @@ public partial class Main : Node3D
         _camera.Tick(dt, _session.Speed.BoostNormalized, _session.Speed.SpeedNormalized, _traffic.CameraCeiling(_camera.Position.Z));
         ApplyTunnelLighting(_traffic.TunnelDarkness);
         _texts.Tick(dt);
+        _touch.Ammo = _session.Ammo;
         _hud.Refresh(dt, _session, _poop.LockedTarget != null, _pigeon.Position.Y < GameConfig.LowFlyHeight);
     }
 
@@ -171,7 +172,8 @@ public partial class Main : Node3D
         var input = Input.GetVector(Actions.MoveLeft, Actions.MoveRight, Actions.MoveDown, Actions.MoveUp) + _touch.MoveVector;
         if (input.LengthSquared() > 1f)
             input = input.Normalized();
-        _pigeon.Tick(dt, input, 10f + speed.BoostNormalized * 8f);
+        _traffic.GetFlyLimits(_pigeon.Position.Z, out var minX, out var maxX);
+        _pigeon.Tick(dt, input, 10f + speed.BoostNormalized * 8f, minX, maxX);
 
         _road.Advance(groundStep);
         _traffic.Tick(dt, groundStep, trafficStep, _session);
@@ -276,40 +278,21 @@ public partial class Main : Node3D
                 _session.Score.AddPoints(20);
                 _texts.Spawn($"+{GameConfig.CrumbsAmmo} poop", Palette.Crumb, textPosition, 0.8f);
                 break;
-            case PickupKind.Feather:
-                if (_session.AddLife())
-                {
-                    _texts.Spawn("+1 feather", Colors.White, textPosition, 0.9f);
-                }
-                else
-                {
-                    _session.Score.AddPoints(200);
-                    _texts.Spawn("+200", Colors.White, textPosition, 0.9f);
-                }
-
-                break;
         }
     }
 
     private void OnPigeonHit(Vector3 position)
     {
-        if (_state != GameState.Playing || _pigeon.IsInvulnerable)
+        if (_state != GameState.Playing)
             return;
 
-        _session.TakeDamage();
-        _pigeon.StartInvulnerability();
-        _camera.AddTrauma(0.75f);
+        // un colpo e basta: niente vite, niente invulnerabilità
+        _session.Crash();
+        _camera.AddTrauma(0.85f);
         _featherBurst.GlobalPosition = position;
         _featherBurst.Restart();
-        Input.VibrateHandheld(120);
-
-        if (_session.IsOver)
-        {
-            EnterGameOver();
-            return;
-        }
-
-        _texts.Spawn("-1 feather", Palette.Danger, position + new Vector3(0f, 1f, -2.5f), 0.9f);
+        Input.VibrateHandheld(250);
+        EnterGameOver();
     }
 
     private void StartGame()

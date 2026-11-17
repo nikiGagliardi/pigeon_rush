@@ -11,7 +11,7 @@ namespace PigeonRush.World;
 /// </summary>
 public static class TunnelMeshes
 {
-    public static readonly float[] Lengths = { 160f, 200f, 240f, 280f };
+    public static readonly float[] Lengths = { 320f, 400f, 480f, 560f };
 
     public const float SignX = -0.2f;
     public const float SignY = 8.3f;

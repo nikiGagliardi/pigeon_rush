@@ -13,12 +13,9 @@ public partial class PigeonController : Node3D
     private PigeonModel _model = null!;
     private MeshInstance3D _shadow = null!;
     private Vector3 _velocity;
-    private float _invulnerable;
-    private float _blinkTimer;
     private float _idleTime;
 
     public Vector3 Velocity => _velocity;
-    public bool IsInvulnerable => _invulnerable > 0f;
 
     public Aabb Bounds => new(Position - GameConfig.PigeonHalfExtents, GameConfig.PigeonHalfExtents * 2f);
 
@@ -42,15 +39,18 @@ public partial class PigeonController : Node3D
 
     /// <param name="input">Direzione desiderata, componenti in [-1, 1] (Y positivo = su).</param>
     /// <param name="flapRate">Velocità del battito d'ali.</param>
-    public void Tick(float dt, Vector2 input, float flapRate)
+    /// <param name="minX">Limite sinistro (ristretto dai cantieri).</param>
+    /// <param name="maxX">Limite destro (ristretto dai cantieri).</param>
+    public void Tick(float dt, Vector2 input, float flapRate, float minX = -GameConfig.FlyHalfWidth, float maxX = GameConfig.FlyHalfWidth)
     {
         var target = new Vector3(input.X * GameConfig.MaxLateralSpeed, input.Y * GameConfig.MaxVerticalSpeed, 0f);
         _velocity = _velocity.MoveToward(target, GameConfig.FlyAcceleration * dt);
 
         var p = Position + _velocity * dt;
-        if (p.X < -GameConfig.FlyHalfWidth || p.X > GameConfig.FlyHalfWidth)
+        if (p.X < minX || p.X > maxX)
         {
-            p.X = Mathf.Clamp(p.X, -GameConfig.FlyHalfWidth, GameConfig.FlyHalfWidth);
+            // la rete del cantiere avanza in diagonale: il piccione viene spinto, senza danni
+            p.X = Mathf.Clamp(p.X, minX, maxX);
             _velocity.X = 0f;
         }
 
@@ -71,7 +71,6 @@ public partial class PigeonController : Node3D
         // in salita sbatte di più, in discesa plana
         _model.Flap(dt, flapRate * (input.Y > 0.3f ? 1.4f : input.Y < -0.5f ? 0.6f : 1f));
 
-        TickInvulnerability(dt);
         UpdateShadow();
     }
 
@@ -88,7 +87,6 @@ public partial class PigeonController : Node3D
     /// <summary>Caduta dopo il game over.</summary>
     public void TickCrash(float dt)
     {
-        _model.Visible = true;
         _velocity.X = Mathf.MoveToward(_velocity.X, 0f, 8f * dt);
         _velocity.Y -= 22f * dt;
         var p = Position + _velocity * dt;
@@ -105,22 +103,6 @@ public partial class PigeonController : Node3D
         Position = p;
         _model.Glide(dt);
         UpdateShadow();
-    }
-
-    public void StartInvulnerability()
-    {
-        _invulnerable = GameConfig.InvulnerableTime;
-        _blinkTimer = 0f;
-    }
-
-    private void TickInvulnerability(float dt)
-    {
-        if (_invulnerable <= 0f)
-            return;
-
-        _invulnerable -= dt;
-        _blinkTimer += dt;
-        _model.Visible = _invulnerable <= 0f || Mathf.PosMod(_blinkTimer, 0.16f) < 0.1f;
     }
 
     private void UpdateShadow()

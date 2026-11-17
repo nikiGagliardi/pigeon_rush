@@ -30,11 +30,11 @@ Se usi una versione di Godot diversa dalla 4.7.2, aggiorna l'`Sdk` in `PigeonRus
 - **Combo:** colpi consecutivi entro 3.5 s moltiplicano i punti (fino a x5). Anche un passaggio a filo tiene viva la combo.
 - **Punti distanza:** metri × moltiplicatore di velocità × **1.5 se voli radente** (sotto i 2 m).
 - **Passaggio a filo:** sfiorare un ostacolo a meno di 0.9 m senza toccarlo vale 50 × combo.
-- **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3.
-- **Piume:** hai 3 vite. Dopo un colpo hai 1.6 s di invulnerabilità. Le piume bianche ridanno una vita.
-- **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. È l'avviso per spostarti.
-- **Gallerie (160-280 m):** soffitto a 5.6 m e ventilatori appesi, quindi niente volo alto. All'interno è buio: si vedono lampade, fari e abbaglianti. La camera si abbassa da sola prima del portale.
-- **Lavori:** chiudono la corsia sinistra o destra per 140-220 m: barriere, coni, carrello con freccia lampeggiante e 1-3 macchinari (escavatori e rulli) che sono ostacoli. Nella corsia chiusa non passa traffico, quindi la strada resta a due corsie.
+- **Un colpo e sei fuori:** al primo impatto con un mezzo o un ostacolo il piccione è spacciato. Niente vite, niente invulnerabilità.
+- **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3. Il contatore sta in basso al centro (icone + `6/10`, rosso lampeggiante quando è vuoto) e, su touch, anche sul pulsante DROP.
+- **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. Lampeggia solo il primo mezzo della corsia: quelli dietro non ti vedono.
+- **Gallerie (320-560 m):** soffitto a 5.6 m e ventilatori appesi, quindi niente volo alto. All'interno è buio: si vedono lampade, fari e abbaglianti. La camera si abbassa da sola prima del portale.
+- **Lavori:** chiudono la corsia sinistra o destra per 160-240 m. Le due estremità sono speculari (cartello, carrello con freccia, coni e rete in diagonale): una verso il piccione e una verso le auto, che sono quelle a cui serve davvero la chiusura. Un ponteggio con rete arancione alto 8 m (più del volo massimo) impedisce di passarci sopra: la strada si stringe davvero a due corsie, con tutto il traffico lì. La rete è un muro morbido (ti spinge, non ti uccide) e segue la diagonale dei coni. I carrelli con la freccia sono invece ostacoli veri: se sei nella corsia chiusa, spostati prima.
 - **Difficoltà:** la velocità base sale da 16 a 30 m/s; più camion e file piene nei primi 150 s.
 
 ## Architettura
@@ -46,7 +46,7 @@ Scripts/
 ├── Main.cs                  Regista: costruzione scena, stato di gioco, ordine di update
 ├── Core/
 │   ├── GameConfig.cs        Tutte le costanti di bilanciamento
-│   ├── GameSession.cs       Stato partita (vite, munizioni, tempo, difficoltà)
+│   ├── GameSession.cs       Stato partita (munizioni, tempo, difficoltà, game over)
 │   ├── SpeedController.cs   Velocità base + boost cumulabili
 │   ├── ScoreService.cs      Punteggio, combo, statistiche
 │   ├── Cells.cs             Griglia 3 corsie × 3 fasce (bitmask) per il varco garantito
@@ -57,7 +57,7 @@ Scripts/
 │   ├── LowPolyBuilder.cs    Primitive → ArrayMesh flat-shaded con vertex color
 │   └── Palette.cs           Colori e materiali condivisi
 ├── Player/
-│   ├── PigeonController.cs  Movimento X/Y con inerzia, inclinazione, invulnerabilità
+│   ├── PigeonController.cs  Movimento X/Y con inerzia, inclinazione, caduta finale
 │   ├── PigeonModel.cs       Piccione procedurale con ali animate
 │   └── PoopSystem.cs        Mirino, traiettoria d'intercetto, macchie
 ├── World/
@@ -70,7 +70,7 @@ Scripts/
 │   ├── Overpass.cs          Cavalcavia
 │   ├── Tunnel.cs / TunnelMeshes.cs       Gallerie a doppia canna (buio, soffitto, ventilatori)
 │   ├── RoadWorks.cs / RoadWorksMeshes.cs Cantieri con corsia chiusa e macchinari
-│   ├── Pickup.cs            Briciole e piume
+│   ├── Pickup.cs            Briciole (ricarica cacca)
 │   ├── RoadScroller.cs / RoadMeshes.cs   Strada a segmenti riciclati
 │   ├── StructureMeshes.cs
 │   └── SceneryFactory.cs    Cielo, sole, nebbia, montagne
@@ -90,7 +90,7 @@ Scripts/
 
 ## Roadmap
 
-**Fase 1 (fatta):** volo, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole e piume, HUD, touch, pausa, game over, record.
+**Fase 1 (fatta):** volo, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
 
 **Fase 2:**
 - Falco che insegue se vai troppo piano
