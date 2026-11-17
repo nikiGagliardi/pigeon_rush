@@ -18,3 +18,7 @@ obj/
 Thumbs.db
 
 export/
+
+# Log di debug
+hitch_log*.txt
+*.log

@@ -43,6 +43,7 @@ public partial class Main : Node3D
     private Hud _hud = null!;
     private TouchControls _touch = null!;
     private Screens _screens = null!;
+    private AssetWarmup? _warmup;
 
     private GameState _state = GameState.Title;
     private long _best;
@@ -88,6 +89,10 @@ public partial class Main : Node3D
         AddChild(_camera);
         _camera.MakeCurrent();
         _camera.Snap();
+
+        // prepara mesh e shader durante il menu: niente scatti alla prima galleria/cantiere
+        _warmup = new AssetWarmup();
+        _camera.AddChild(_warmup);
 
         var ui = new CanvasLayer { Layer = 10, ProcessMode = ProcessModeEnum.Always };
         AddChild(ui);
@@ -297,6 +302,9 @@ public partial class Main : Node3D
 
     private void StartGame()
     {
+        if (_warmup != null && IsInstanceValid(_warmup) && !_warmup.IsDone)
+            _warmup.FinishNow();
+
         _state = GameState.Playing;
         _inputDelay = 0.25f; // evita che lo Spazio del menu sganci subito
         _session.Speed.TimeScale = 1f;

@@ -55,6 +55,7 @@ Scripts/
 │   └── SaveData.cs          Record in user://
 ├── Rendering/
 │   ├── LowPolyBuilder.cs    Primitive → ArrayMesh flat-shaded con vertex color
+│   ├── AssetWarmup.cs       Pre-costruzione mesh e pre-compilazione shader durante il menu
 │   └── Palette.cs           Colori e materiali condivisi
 ├── Player/
 │   ├── PigeonController.cs  Movimento X/Y con inerzia, inclinazione, caduta finale
@@ -87,6 +88,7 @@ Scripts/
 - **Collisioni manuali AABB** con sweep sull'asse Z: deterministiche, economiche, nessun "salto" dell'ostacolo ad alta velocità.
 - **Guida a destra:** i mezzi contromano (verso +Z) hanno lo spartitraffico alla loro sinistra, quindi la carreggiata opposta sta sul lato +X. Lì il traffico va nella stessa direzione del piccione: a inizio partita ti sorpassa, quando acceleri sei tu a superarlo.
 - **Strutture lunghe** (gallerie, cantieri): nel calcolo del varco conta l'intervallo [fronte, coda], non un singolo istante. Un mezzo non viene generato nella corsia chiusa se raggiungerebbe il cantiere prima di uscire dalla visuale.
+- **Niente scatti alla prima comparsa:** tutti i mesh procedurali (gallerie, cantieri, veicoli…) vengono costruiti durante il menu, uno per frame, e disegnati una volta in miniatura dietro al pannello del titolo, così geometria e shader sono già pronti quando parte la partita. In più l'export Android ha lo **Shader Baker** attivo.
 - **Ordine di update esplicito** in `Main.TickPlaying`: niente dipendenze dall'ordine dei `_Process`.
 
 ## Roadmap

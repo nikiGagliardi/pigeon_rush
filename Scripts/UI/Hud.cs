@@ -28,6 +28,9 @@ public partial class Hud : Control
     private float _comboPop;
     private float _ammoPop;
     private float _emptyBlink;
+    private Color _ammoTextColor = Colors.White;
+
+    private static readonly StringName FontColor = "font_color";
 
     public event Action? PausePressed;
 
@@ -192,16 +195,27 @@ public partial class Hud : Control
             // vuoto: lampeggia in rosso
             _emptyBlink += dt;
             var on = Mathf.PosMod(_emptyBlink, 0.5f) < 0.25f;
-            _ammoCount.AddThemeColorOverride("font_color", on ? Palette.Danger : Colors.White);
+            SetAmmoTextColor(on ? Palette.Danger : Colors.White);
             _ammoPanel.Modulate = new Color(1f, on ? 0.6f : 1f, on ? 0.6f : 1f);
         }
         else
         {
             _emptyBlink = 0f;
-            _ammoCount.AddThemeColorOverride("font_color", _ammoPop > 0f ? Palette.Crumb : Colors.White);
+            SetAmmoTextColor(_ammoPop > 0f ? Palette.Crumb : Colors.White);
             var glow = 1f + _ammoPop * 0.4f;
-            _ammoPanel.Modulate = new Color(glow, glow, glow);
+            var modulate = new Color(glow, glow, glow);
+            if (_ammoPanel.Modulate != modulate)
+                _ammoPanel.Modulate = modulate;
         }
+    }
+
+    /// <summary>Cambia il colore solo se serve: ogni override del tema forza un nuovo layout del testo.</summary>
+    private void SetAmmoTextColor(Color color)
+    {
+        if (color == _ammoTextColor)
+            return;
+        _ammoTextColor = color;
+        _ammoCount.AddThemeColorOverride(FontColor, color);
     }
 
     private static void FadeTo(Control control, float alpha, float dt)

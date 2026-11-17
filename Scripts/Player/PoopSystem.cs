@@ -246,18 +246,18 @@ public partial class PoopSystem : Node3D
         poop.Node.Visible = false;
     }
 
-    private static ArrayMesh DropMesh => _dropMesh ??= new LowPolyBuilder()
+    internal static ArrayMesh DropMesh => _dropMesh ??= new LowPolyBuilder()
         .Sphere(0.11f, Vector3.Zero, new Vector3(1f, 1.2f, 1f), Palette.Poop, 6, 4)
         .Sphere(0.06f, new Vector3(0.04f, 0.05f, 0.03f), Vector3.One, Palette.PoopShade, 5, 3)
         .Build();
 
-    private static ArrayMesh RoadSplatMesh => _roadSplatMesh ??= new LowPolyBuilder()
+    internal static ArrayMesh RoadSplatMesh => _roadSplatMesh ??= new LowPolyBuilder()
         .Sphere(0.35f, Vector3.Zero, new Vector3(1f, 0.06f, 1.4f), Palette.Poop, 7, 3)
         .Sphere(0.16f, new Vector3(0.25f, 0f, 0.3f), new Vector3(1f, 0.08f, 1f), Palette.PoopShade, 6, 3)
         .Build();
 
     /// <summary>Anello giallo unlit di raggio 1 (scalato in base al mezzo).</summary>
-    private static ArrayMesh ReticleMesh => _reticleMesh ??= new LowPolyBuilder()
+    internal static ArrayMesh ReticleMesh => _reticleMesh ??= new LowPolyBuilder()
         .Add(new TorusMesh { InnerRadius = 0.86f, OuterRadius = 1f, Rings = 24, RingSegments = 4 },
             Transform3D.Identity, Palette.Reticle, unlit: true)
         .Box(new Vector3(0.5f, 0.04f, 0.08f), new Vector3(0f, 0f, 0f), Palette.Reticle, unlit: true)

@@ -42,7 +42,7 @@ public partial class Pickup : Node3D
         Position = new Vector3(Position.X, _baseY + Mathf.Sin(_phase * 4f) * 0.15f, Position.Z);
     }
 
-    private static ArrayMesh CrumbsMesh => _crumbsMesh ??= new LowPolyBuilder()
+    internal static ArrayMesh CrumbsMesh => _crumbsMesh ??= new LowPolyBuilder()
         .Box(new Vector3(0.22f, 0.16f, 0.2f), new Vector3(0f, 0f, 0f), Palette.Crumb, new Vector3(10f, 20f, 5f))
         .Box(new Vector3(0.16f, 0.14f, 0.18f), new Vector3(0.22f, 0.08f, 0.1f), Palette.CrumbDark, new Vector3(30f, 0f, 15f))
         .Box(new Vector3(0.18f, 0.12f, 0.14f), new Vector3(-0.2f, -0.05f, 0.12f), Palette.Crumb, new Vector3(0f, 45f, 20f))
