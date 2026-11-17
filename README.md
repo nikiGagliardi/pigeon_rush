@@ -2,7 +2,7 @@
 
 Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia, centra i mezzi con la cacca per guadagnare velocità e punti.
 
-**Stack:** Godot 4.7.2 (.NET) · C# · .NET 10 · renderer Mobile · PC + Android/iOS
+**Stack:** Godot 4.7.2 (.NET) · C# · .NET 10 · renderer Mobile · mobile (Android, poi iOS); PC solo per sviluppo
 
 ## Come avviarlo
 
@@ -93,21 +93,300 @@ Scripts/
 - **Audio sintetizzato:** tutti gli effetti (`Audio/sfx/*.wav`, 44.1 kHz mono) sono generati da `Tools/synth_sfx.py` (numpy/scipy), niente asset esterni. I passaggi dei mezzi hanno il Doppler già nel file, quindi il Doppler di Godot è spento; i loop (strada, vento, galleria) sono senza cucitura e vengono messi in loop a runtime.
 - **Ordine di update esplicito** in `Main.TickPlaying`: niente dipendenze dall'ordine dei `_Process`.
 
+## Struttura di gioco e monetizzazione
+
+### Decisioni prese
+
+- **Solo mobile:** Android prima, iOS in un secondo momento. Tastiera e gamepad restano solo per sviluppare e provare su PC, senza versione PC pubblicata.
+- **Pubblico 13+:** niente programma Famiglie di Google Play. Grafica e testi restano coerenti con un pubblico di adolescenti e adulti.
+- **Volo continuo diviso in tratte**, senza livelli. Il record si batte in un'unica corsa, e le tratte danno il senso di progresso.
+- **Un solo "Continua" con pubblicità a premio per partita.**
+- **Server proprio su Infomaniak:** una nuova VPS dedicata ai giochi (1 vCPU / 2 GB per iniziare, da scalare quando il monitoraggio lo indica) con un dominio dedicato, condivisa da tutti i giochi. Ospita API, classifica mondiale, informativa privacy e pagina di cancellazione account. Tutto gira in **Docker Compose**.
+
+### Perché il volo continuo e non i livelli
+
+| | Livelli | Volo continuo a tratte (scelto) |
+|---|---|---|
+| Lavoro | Livelli da disegnare e bilanciare uno per uno | La generazione procedurale c'è già |
+| Morte al primo colpo | Frustrante: si ripete il livello | Naturale: "batti il tuo record" |
+| "Continua" con pubblicità | Ha poco senso (tanto vale ricominciare il livello) | Ha senso: il giocatore sta perdendo un record |
+| Spazi per la pubblicità | Pochi (tra i livelli) | A ogni morte |
+| Meteo e giorno/notte | Fissi per livello | Cambiano durante il volo, all'uscita delle gallerie |
+
+### Il viaggio sulla A2
+
+Il volo è un viaggio a tratte reali: **Chiasso → Lugano → Bellinzona → Gottardo → Lucerna → Zurigo → Basilea**, poi si ricomincia a difficoltà più alta.
+
+*Variante da valutare:* al **bivio di Bellinzona** il giocatore sceglie la strada volando nelle corsie di sinistra o di destra: A2 verso il Gottardo oppure **A13 verso il San Bernardino** (Roveredo → Mesocco → galleria del San Bernardino → Thusis → Coira).
+
+- All'inizio di ogni tratta compare un cartello ("Welcome to Canton Uri") e si riceve un piccolo bonus.
+- Meteo e ora del giorno cambiano all'uscita delle gallerie (vedi l'idea più sotto). Notte e nebbia danno un moltiplicatore di punti.
+- Il record diventa anche "fin dove sei arrivato" su una mini mappa.
+- Ci sono **missioni giornaliere** ("colpisci 5 bus", "vola 1 km di notte"), che portano il giocatore a fare più partite.
+
+### Pubblicità
+
+| Formato | Quando | Regole |
+|---|---|---|
+| **A premio: Continua** | Alla morte: pannello "Continue?" con conto alla rovescia di 5 s | **1 per partita.** Il pulsante compare solo se la pubblicità è già caricata |
+| **A premio: doppio bottino** | Schermata di game over | Raddoppia le briciole d'oro della partita |
+| **A premio: partenza potenziata** | Menu | Per esempio "parti con 10 cacche" |
+| **A schermo intero** | Solo al game over | Ogni 3 partite circa, mai nelle prime 3, almeno 90 s tra una e l'altra, mai subito dopo una pubblicità a premio, mai durante il volo |
+| Banner | Nessuno | Rendono poco e rovinano l'aspetto del gioco |
+
+Le frequenze sono valori di partenza, da calibrare con i dati reali.
+
+**Flusso del Continua:**
+1. Schianto e rallentatore, poi il pannello con l'anello di 5 s e i pulsanti "▶ Watch ad" / "No thanks".
+2. Durante la pubblicità il gioco è in pausa e l'audio fermo.
+3. Se la pubblicità viene vista fino in fondo:
+   - spariscono gli ostacoli nei 60-80 m davanti al piccione;
+   - il piccione è invulnerabile per 2.5 s e lampeggia;
+   - parte il countdown 3-2-1;
+   - punteggio, distanza, combo, tratta e meteo restano quelli di prima.
+4. Se la pubblicità viene chiusa prima o non è disponibile, si va al game over.
+5. La pubblicità a premio si **carica in anticipo durante il volo**, non dopo la morte.
+
+### Briciole d'oro e un eventuale secondo Continua
+
+Le **briciole d'oro** sono la valuta di gioco. Si guadagnano volando: sono raccoglibili rari, si ottengono convertendo la distanza a fine partita, completando missioni e con il "doppio bottino". Servono a comprare skin del piccione.
+
+Il secondo Continua, se lo si aggiunge, **va pagato con le briciole d'oro e non direttamente con soldi veri**:
+
+| | Briciole d'oro | Soldi veri (es. CHF 0.99 a Continua) |
+|---|---|---|
+| Percezione | "Me lo sono guadagnato" | "Pay to win", recensioni negative |
+| Conversione | Alta: chiunque gioca ne ha | Bassissima: pochi pagano nel momento della morte |
+| Tecnica | Solo dati salvati in locale | Google Play Billing con un acquisto consumabile a ogni morte |
+| Ricavi | Indiretti: il giocatore guarda più pubblicità "doppio bottino" e forse compra pacchetti di briciole | Diretti ma rari |
+
+Proposta: il secondo Continua costa per esempio 150 briciole e c'è un massimo di 2 Continua per partita (1 con pubblicità + 1 con briciole). Il prezzo va bilanciato con quanto si guadagna in una partita media. I soldi veri entrano solo da **"Rimuovi pubblicità"** (acquisto una tantum) e, in seguito, eventualmente da **pacchetti di briciole**. *Da decidere più avanti, con l'economia già in funzione.*
+
+### Classifica mondiale e identità del giocatore
+
+**Obiettivo:** a ogni morte la partita viene inviata al server. Il game over mostra la posizione nel mondo ("#1234 in the world", "NEW WORLD RECORD!") e si può aprire la classifica.
+
+**Come si riconosce il giocatore, senza registrazione.** Si combinano due sistemi:
+
+| | Account anonimo del gioco | Google Play Games Services v2 (facoltativo) |
+|---|---|---|
+| Cos'è | Al primo avvio il server crea un giocatore e restituisce un ID e un token segreto, salvati sul telefono | Accesso automatico all'avvio, senza schermate: dà un ID giocatore Google e il nome del profilo Play Giochi |
+| Pro | Funziona sempre, anche senza Play Giochi e su iOS | Il giocatore ritrova l'account dopo una reinstallazione o su un telefono nuovo; l'identità è verificabile dal server |
+| Contro | Se l'app viene disinstallata l'account si perde | Non tutti usano Play Giochi; su iOS serve Game Center a parte |
+
+**Flusso:**
+1. Primo avvio: il gioco crea l'account anonimo. Il nome di default è quello di Play Giochi, oppure `Pigeon1234`, e si può cambiare nelle impostazioni.
+2. Se Play Giochi è attivo, il gioco chiede un codice monouso (`requestServerSideAccess`) e lo invia al server. Il server lo scambia con Google, verifica l'ID del giocatore con le API di Play Games e lo **collega** all'account. Con un telefono nuovo, lo stesso ID ritrova il vecchio account.
+3. Nome visibile in classifica: filtro delle parolacce e un suffisso `#1234` se il nome è già usato.
+
+**Server (stesso stack degli altri progetti):** ASP.NET Core (.NET 10) minimal API + **PostgreSQL** + Dapper, con HTTPS, sul server Infomaniak. È unico per tutti i giochi: ogni gioco ha il suo identificativo.
+
+| Endpoint | Cosa fa |
+|---|---|
+| `POST /v1/players` | Crea l'account anonimo e restituisce ID e token |
+| `POST /v1/players/me/google` | Collega Play Giochi (codice monouso) |
+| `PATCH /v1/players/me` | Cambia il nome |
+| `POST /v1/games/{game}/runs` | Invia una partita (punti, distanza, durata, colpi, tratta, continue usati, versione) e restituisce posizione, record personale e record mondiale |
+| `GET /v1/games/{game}/leaderboards/{all\|week\|day}` | Classifica: primi 100 + "intorno a me" |
+| `DELETE /v1/players/me` | Cancella account e dati (richiesto da Google Play) |
+
+Tabelle: `games`, `players`, `player_identities` (provider + ID esterno), `runs`, `best_scores` (migliore per gioco, giocatore e periodo).
+
+**Perché PostgreSQL (scelto).** Lo conosci, gira in un container accanto all'API, ha transazioni, upsert e indici, e regge senza problemi i volumi di un gioco indie. La regola è non calcolare mai la classifica sulla tabella `runs`, ma su `best_scores`: un record per gioco, periodo e giocatore, aggiornato solo quando il punteggio migliora.
+
+```sql
+CREATE TABLE best_scores (
+    game_id     smallint    NOT NULL,
+    period      text        NOT NULL,   -- 'all', 'w2026-47', 'd2026-11-17'
+    player_id   uuid        NOT NULL,
+    score       bigint      NOT NULL,
+    run_id      bigint      NOT NULL,
+    achieved_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (game_id, period, player_id)
+);
+CREATE INDEX ix_best_rank ON best_scores (game_id, period, score DESC, achieved_at);
+
+-- aggiorna solo se il nuovo punteggio è migliore
+INSERT INTO best_scores (game_id, period, player_id, score, run_id)
+VALUES (@GameId, @Period, @PlayerId, @Score, @RunId)
+ON CONFLICT (game_id, period, player_id)
+DO UPDATE SET score = EXCLUDED.score, run_id = EXCLUDED.run_id, achieved_at = now()
+WHERE EXCLUDED.score > best_scores.score;
+
+-- posizione = quanti hanno fatto meglio + 1
+SELECT COUNT(*) + 1 FROM best_scores WHERE game_id = @GameId AND period = @Period AND score > @Score;
+```
+
+I periodi scaduti si cancellano con un job notturno. Se un giorno i numeri lo richiedessero, si possono aggiungere una posizione approssimata ("Top 12%") per chi è molto in basso e **Redis/Valkey come cache**, con Postgres che resta la fonte di verità. Le alternative scartate:
+- **SQLite:** scrive una cosa per volta;
+- **MySQL:** non dà nulla in più;
+- **MongoDB:** i dati sono relazionali.
+
+### Server: repository e pipeline
+
+**Repository separato** (es. `game-services`), non dentro il progetto Godot, per tre motivi:
+- Godot compila **tutti** i `.cs` sotto la cartella del progetto, quindi il codice del server finirebbe nell'assembly del gioco (e nell'APK).
+- Il server è condiviso da tutti i giochi: non appartiene a Pigeon Rush.
+- Versioni e rilasci sono indipendenti: si aggiorna il server senza ripubblicare il gioco, e viceversa.
+
+```
+game-services/
+├── src/GameServices.Api/          Minimal API, Dapper, autenticazione con token
+├── src/GameServices.Migrations/   Script SQL numerati (DbUp), eseguiti al deploy
+├── tests/GameServices.Tests/      Test con Testcontainers (Postgres vero)
+├── deploy/                        compose.yml, Caddyfile, deploy.sh, configurazione di Postgres
+└── .github/workflows/deploy.yml
+```
+
+Nel gioco va solo il client: `Scripts/Online/GameServicesClient.cs`, con i DTO copiati dall'API. Sono pochi e l'API è versionata (`/v1`).
+
+**Hosting: nuova VPS Infomaniak dedicata ai giochi (1 vCPU / 2 GB) con Docker Compose.** Docker aggiunge un livello, ma porta vantaggi concreti:
+- ogni servizio è isolato e descritto in un file;
+- aggiungere servizi in futuro (Redis, worker, dashboard) è banale;
+- spostarsi su una VPS più grande vuol dire copiare la cartella e i volumi.
+
+```
+/opt/game-services/compose.yml
+├── caddy           reverse proxy, HTTPS automatico (Let's Encrypt)      ~30 MB
+├── api             ASP.NET Core, limite memoria 512 MB                  ~100-200 MB
+├── postgres        postgres:17, limite 768 MB, volume persistente       ~150-400 MB
+├── backup          pg_dump notturno → kDrive, tiene 14 giorni           quasi 0
+└── beszel-agent    metriche di server e container per il monitoraggio   ~10 MB
+```
+
+Configurazione per 2 GB di RAM:
+- Postgres configurato per 2 GB: `shared_buffers=256MB`, `effective_cache_size=768MB`, `max_connections=30`;
+- pool di connessioni Npgsql piccolo;
+- 1-2 GB di swap come rete di sicurezza.
+
+**Monitoraggio e avvisi.** Si usa **Beszel**, leggero, con statistiche per container e avvisi via email, Telegram, ntfy o webhook:
+- l'**hub** (la dashboard) gira sull'**altra** VPS (`nikigagliardi.ch`), così se il server dei giochi si spegne l'avviso arriva lo stesso;
+- sul server dei giochi gira solo l'**agent**;
+- il **gioco non dipende dal server**: se l'API non risponde si gioca comunque, e le partite restano in coda.
+
+| Avviso | Soglia di partenza | Cosa vuol dire |
+|---|---|---|
+| Server irraggiungibile | 2 minuti | VPS o rete giù |
+| CPU | > 80% per 10 minuti | Tempo di passare a 2 vCPU |
+| RAM | > 85% per 10 minuti | Tempo di passare a 4 GB (o di ridurre la memoria di Postgres) |
+| Disco | > 80% | Pulire log e backup o ingrandire il disco |
+| API `/health` | non risponde per 2 minuti | Container fermo o in errore |
+
+**Scalare:** quando gli avvisi diventano frequenti si passa alla VPS più grande. Se serve, Postgres si sposta su una macchina sua: basta cambiare la stringa di connessione dell'API.
+
+**Pipeline (GitHub Actions)**, a ogni push su `main`:
+1. build + test, con Postgres in un container del runner;
+2. build dell'immagine Docker dell'API, con tag = commit;
+3. trasferimento al server via SSH (`docker save | gzip | ssh … docker load`), senza registro esterno e senza limiti di spazio del piano gratuito;
+4. sul server, `deploy.sh <tag>`:
+   - esegue le migrazioni del database (DbUp);
+   - aggiorna il tag in `.env` e lancia `docker compose up -d api`;
+   - controlla `/health`: se fallisce, torna al tag precedente;
+5. il server tiene le ultime 5 immagini, così il ripristino è immediato.
+
+Il server ha un utente `deploy` con chiave SSH dedicata (salvata nei secret di GitHub) che può usare Docker solo nella cartella del servizio.
+
+*In seguito, per il gioco:* una seconda pipeline che esporta l'AAB Android con Godot in modalità headless e lo carica nel test interno di Play Console.
+
+**Dettagli importanti:**
+- **Mai bloccare il gioco:** l'invio parte al game over con un timeout di circa 3 s, mostrando "Saving…". Senza rete la partita va in una coda locale e viene reinviata al prossimo avvio. "Try again" funziona sempre.
+- **Anti-trucchi:**
+  - controlli di plausibilità sul server: punti compatibili con distanza e colpi, distanza compatibile con la durata e la velocità massima, punti al secondo entro un limite;
+  - limite di richieste;
+  - le partite sospette vengono segnalate, non mostrate.
+  - Un segreto nel client non basta, perché si estrae dall'APK. In seguito si può aggiungere la **Play Integrity API**.
+- **Privacy:** nome, punteggi e ID sono dati personali. Servono quindi informativa privacy, modulo "Sicurezza dei dati" e **cancellazione account sia nel gioco sia da una pagina web**, entrambe ospitate sul dominio del server.
+
+### Obblighi
+
+- **Consenso privacy (UMP / GDPR):** richiesto in Europa e Svizzera prima di mostrare pubblicità personalizzate.
+- **Pubblico 13+** dichiarato nel questionario di Play Console, con la classificazione dei contenuti IARC.
+- **Informativa privacy** pubblicata a un indirizzo web e modulo "Sicurezza dei dati" compilato, perché l'SDK delle pubblicità raccoglie l'ID pubblicitario e il server salva nome e punteggi.
+- **Cancellazione account:** il gioco crea un account sul server, quindi Google Play richiede di poterlo cancellare sia dall'app sia da una pagina web.
+- **Account sviluppatore personale nuovo** (creato a novembre 2026, in verifica): prima della produzione serve un test chiuso con almeno **12 tester per 14 giorni consecutivi**. Conviene avviarlo appena l'account è verificato, anche con la build attuale, perché la build si può aggiornare durante il test.
+
 ## Roadmap
 
 **Fase 1 (fatta):** volo, effetti sonori, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
 
-**Fase 2:**
+L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della monetizzazione e si prova su PC con una pubblicità finta. Le tratte vengono prima del meteo perché il meteo cambia all'uscita delle gallerie e per tratta. Il server arriva dopo le tratte, perché la classifica mostra anche fin dove si è arrivati, e prima delle pubblicità vere, perché il dominio ospita l'informativa privacy. L'economia viene prima delle pubblicità vere, che altrimenti non avrebbero niente da raddoppiare.
+
+**Subito, in parallelo:** appena l'account Play Console è verificato, caricare la build attuale nel test interno e poi avviare il test chiuso con 12 tester, per far partire i 14 giorni.
+
+### Fase 2: ciclo di partita e Continua (pubblicità finta)
+- [ ] Countdown 3-2-1 a inizio partita (suoni già pronti), riusato dopo il Continua
+- [ ] `IAdService` + `MockAdService` (pubblicità simulata di 2 s, successo o annullamento)
+- [ ] Stato `ContinueOffer`: pannello "Continue?", anello di 5 s, pulsanti
+- [ ] Ripresa: pulizia degli ostacoli davanti, invulnerabilità con lampeggio, punteggio conservato, 1 per partita
+- [ ] Regole della pubblicità a schermo intero (contatore partite e intervallo minimo) con la versione finta
+- [ ] Salvataggio in JSON con versione (record, partite giocate, impostazioni) al posto del solo record
+
+### Fase 3: tratte della A2
+- [ ] Definizione dati delle tratte (nome, cantone, lunghezza, meteo possibili)
+- [ ] Cartelli "Welcome to Canton …" e bonus di tratta
+- [ ] Barra di avanzamento e mini mappa nell'HUD, "fin dove sei arrivato" nel game over
+- [ ] Giro successivo dopo Basilea, a difficoltà più alta
+- [ ] *Variante da valutare:* bivio di Bellinzona con la A13 del San Bernardino (Roveredo, Mesocco, Thusis, Coira)
+
+### Fase 4: meteo e giorno/notte
+- [ ] Preset d'ambiente (nebbia, sole, luce ambiente, cielo, luci) con transizioni graduali, riusando il sistema delle gallerie
+- [ ] Sole, nuvoloso, tramonto, nebbia
+- [ ] Notte: cielo scuro, anabbaglianti sempre accesi, lampioni
+- [ ] Pioggia: poche particelle attorno alla camera, strada lucida, nuovi suoni (pioggia in loop, tuono)
+- [ ] Moltiplicatore di punti nell'HUD ("Foggy ×1.2", "Night ×1.3")
+
+### Fase 5: server dei giochi e classifica mondiale
+- [ ] Nuova VPS Infomaniak (1 vCPU / 2 GB) + dominio dedicato ai giochi, sottodominio `api.`
+- [ ] Docker Compose: Caddy (HTTPS), API, PostgreSQL 17, backup notturno verso kDrive, swap
+- [ ] Monitoraggio: hub Beszel sulla VPS esistente, agent sul server dei giochi, avvisi su CPU, RAM, disco, server giù e `/health`
+- [ ] Repository `game-services` separato: API ASP.NET Core + PostgreSQL + Dapper (giocatori, collegamento a Play Giochi, partite, classifiche sempre/settimana/giorno), migrazioni DbUp, test con Testcontainers
+- [ ] Pipeline GitHub Actions: build, test, immagine Docker, trasferimento via SSH, migrazioni, `docker compose up`, controllo `/health` con ripristino automatico
+- [ ] Controlli di plausibilità e limite di richieste
+- [ ] Pagine web: informativa privacy e cancellazione account
+- [ ] Nel gioco: account anonimo, nome modificabile, invio della partita al game over con coda offline
+- [ ] Game over con posizione mondiale e "NEW WORLD RECORD!", schermata della classifica
+- [ ] Plugin Play Games Services v2 per Godot: accesso automatico e collegamento dell'account
+- [ ] Cancellazione account dalle impostazioni del gioco
+
+### Fase 6: economia e progressione
+- [ ] Briciole d'oro: raccoglibile raro + conversione della distanza a fine partita
+- [ ] "Doppio bottino" con pubblicità a premio (finta)
+- [ ] Negozio di skin del piccione (colori, cappellini)
+- [ ] 3 missioni giornaliere, azzerate a mezzanotte (ora locale)
+- [ ] *Da decidere:* secondo Continua con le briciole
+
+### Fase 7: pubblicità vere (Android)
+- [ ] Scelta del plugin AdMob e ponte GDScript → C# (`AdMobAdService`)
+- [ ] Consenso UMP al primo avvio
+- [ ] ID di prova, poi ID reali; caricamento anticipato; gestione degli errori senza bloccare il gioco
+- [ ] Test sul S24 e su un telefono di fascia bassa
+- **Rischio:** export C# Android ancora sperimentale + plugin Java (vale anche per Play Giochi). Fare un prototipo presto, anche in parallelo con la Fase 3.
+
+### Fase 8: acquisti in-app
+- [ ] Plugin Google Play Billing
+- [ ] "Rimuovi pubblicità" (acquisto una tantum) con ripristino degli acquisti
+- [ ] *Eventuale:* pacchetti di briciole d'oro
+
+### Fase 9: pubblicazione su Google Play
+- [x] Account Play Console creato (in verifica)
+- [ ] Test chiuso con 12 tester per 14 giorni, da avviare subito (vedi sopra)
+- [ ] Firma dell'app, AAB, livello API richiesto
+- [ ] Modulo "Sicurezza dei dati" (pubblicità + server), link alla cancellazione account, questionario IARC (13+)
+- [ ] Scheda dello store: icona, screenshot, video breve
+- [ ] Test interno → test chiuso (12 tester × 14 giorni) → produzione
+
+### Fase 10: dopo il lancio
 - Falco che insegue se vai troppo piano
 - Polizia: se la colpisci parte il "livello ricercato" con un elicottero o un drone che ti insegue
-- Meteo e ora del giorno (vedi sotto), vento laterale
-- Autovelox con flash accecante
+- Autovelox con flash accecante, vento laterale
 - Power-up: mega-cacca, magnete per le briciole, scudo di piume, slow-motion
-- Musica; countdown 3-2-1 a inizio partita (i suoni `countdown_beep`/`countdown_go` sono già pronti)
+- Musica
 - Opzione controllo con inclinazione (accelerometro)
-- Skin del piccione, upgrade e classifica online
+- iOS (Game Center per l'identità)
+- Pipeline del gioco: export AAB headless e caricamento automatico nel test interno di Play Console
+- Classifiche tra amici, classifica per tratta
 
-### Idea: meteo e ora del giorno (non ancora implementato)
+## Idea: meteo e ora del giorno (Fase 4)
 
 Condizioni che cambiano la **distanza visiva** e l'atmosfera:
 
