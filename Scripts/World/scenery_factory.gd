@@ -105,7 +105,12 @@ static func _add_peak(b: LowPolyBuilder, rng: RandomNumberGenerator, base_positi
 	var height := (110.0 + rng.randf() * 110.0) * scale
 	var radius := (70.0 + rng.randf() * 50.0) * scale
 	var color := Palette.MOUNTAIN if rng.randf() < 0.5 else Palette.MOUNTAIN_LIGHT
-	b.cone(radius, height, base_position, color, 6 + rng.randi_range(0, 2))
-	# cappello di neve
-	var cap_height := height * 0.28
-	b.cone(radius * 0.28 + 1.0, cap_height, base_position + Vector3(0.0, height - cap_height - 0.5, 0.0), Palette.SNOW, 6)
+	var segments := 6 + rng.randi_range(0, 2)
+	# Roccia e neve sono due pezzi che si incastrano (tronco di cono + punta) con gli stessi segmenti:
+	# condividono il bordo e non si sovrappongono. Un cono di neve infilato nella montagna avrebbe facce
+	# quasi coincidenti, e a 400 m di distanza lo z-buffer non le distingue (neve "a metà").
+	var cap_height := height * rng.randf_range(0.24, 0.32)
+	var rock_height := height - cap_height
+	var snow_line_radius := radius * cap_height / height
+	b.cylinder(snow_line_radius, radius, rock_height, base_position + Vector3(0.0, rock_height * 0.5, 0.0), color, segments)
+	b.cone(snow_line_radius, cap_height, base_position + Vector3(0.0, rock_height, 0.0), Palette.SNOW, segments)

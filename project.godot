@@ -16,6 +16,13 @@ run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
+[debug]
+
+gdscript/warnings/untyped_declaration=2
+gdscript/warnings/unsafe_property_access=1
+gdscript/warnings/unsafe_method_access=1
+gdscript/warnings/unsafe_call_argument=1
+
 [display]
 
 window/size/viewport_width=1280
@@ -23,13 +30,6 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=4
-
-[debug]
-
-gdscript/warnings/untyped_declaration=2
-gdscript/warnings/unsafe_property_access=1
-gdscript/warnings/unsafe_method_access=1
-gdscript/warnings/unsafe_call_argument=1
 
 [rendering]
 
