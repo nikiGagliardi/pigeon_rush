@@ -32,7 +32,7 @@ Opzioni (dopo `--`):
 - `--survive=20`: impatti ignorati solo per i primi 20 s, per partite più brevi;
 - `--no-ads`: simula la mancanza di pubblicità, quindi niente pannello "Continue?" (funziona anche giocando normalmente).
 - `--time=night` e/o `--weather=fog`: forzano ora (`day`, `sunset`, `night`) e meteo (`sun`, `cloudy`, `fog`, `rain`, `snow`) di tutte le tratte, anche giocando normalmente.
-- `--api=http://127.0.0.1:8099`: usa un server di prova invece di `api.moesagames.ch` (solo build di debug, anche giocando normalmente). Nella prova automatica il client online è spento se manca `--api`, così non tocca mai il server vero; con `--api` controlla anche che entrambe le partite ricevano ticket e risposta. Usa `user://online_smoke.json`, non l'account vero.
+- `--api=http://127.0.0.1:8099`: usa un server di prova invece di `api.moesagames.ch` (solo build di debug, anche giocando normalmente). Nella prova automatica il client online è spento se manca `--api`, così non tocca mai il server vero; con `--api` controlla anche che entrambe le partite ricevano ticket e risposta, che arrivi il saldo delle briciole d'oro e che una missione si possa riscuotere. Usa `user://online_smoke.json`, non l'account vero. Server finto: `python Tools/mock_api.py 8099` (rifiuta le partite senza le statistiche delle missioni).
 
 **Provare meteo e ora mentre si gioca** (solo build di debug, cioè da editor): **F7** cambia l'ora del giorno, **F8** il meteo, **F9** torna a quelli del seed. Funziona anche nel menu e resta valido dopo "Try again". Il bonus di punti segue quello forzato.
 
@@ -73,6 +73,8 @@ Opzioni (dopo `--`):
 - **Bonus di visibilità:** i punti distanza si moltiplicano per notte ×1.3, nebbia ×1.2, neve ×1.15, pioggia ×1.1 (cumulabili: notte con nebbia ×1.56). Il bonus attivo è scritto in oro sotto la barra della tratta.
 - **Suggerimenti delle prime partite:** compaiono sopra le munizioni nel momento in cui servono (comandi di volo, primo mirino, primo colpo, primo passaggio a filo, munizioni sotto 3, volo radente dopo 25 s), una volta sola ciascuno. "SHOW TIPS AGAIN" nelle impostazioni li fa ricomparire.
 - **Impostazioni** (dal titolo e dalla pausa): volume, vibrazione, suggerimenti, informativa privacy, versione del gioco.
+- **Briciole d'oro:** la valuta del gioco. Ogni tanto compare una **briciola d'oro** (più grande, alone chiaro, due anelli; la prima dopo 250 m, poi una ogni 300-600 m) che vale +50 punti e 5 briciole d'oro. A fine partita il server accredita 1 briciola ogni 100 m più 5 per ogni briciola d'oro raccolta, al massimo 200 a partita e 1500 al giorno, e solo per le partite iniziate online. Il game over mostra "+33 GOLDEN CRUMBS  •  total 1,250", il titolo il saldo. Per ora si accumulano: il negozio arriverà più avanti.
+- **Missioni giornaliere:** dal titolo, "MISSIONS". Tre obiettivi al giorno uguali per tutti (per esempio "Splat 4 buses", "Fly 1500 m at night", "Fly today's challenge"), nuovi a mezzanotte UTC. Contano le partite iniziate online; il progresso lo calcola il server. Una missione completa si riscuote con "CLAIM" (30-90 briciole d'oro). Il pulsante del titolo mostra quante ce ne sono da riscuotere ("MISSIONS (1)") e il game over avvisa quando una partita ne completa una.
 - **Classifica mondiale:** nel game over la posizione ("WORLD #1,234  •  THIS WEEK #56"); "NEW WORLD RECORD!" quando la partita porta in testa alla classifica di sempre, "#1 IN TODAY'S CHALLENGE!" in quella del giorno.
 - **Difficoltà:** cresce con i metri percorsi (al massimo dopo 4 km), non col tempo. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
 
@@ -100,7 +102,8 @@ Scripts/
 │   └── ads.gd               Accesso statico: il servizio vive fuori dalla scena e sopravvive a "Try again"
 ├── Online/
 │   └── game_services_client.gd  Server dei giochi: account anonimo, ticket di partita, invio con coda offline,
-│                                classifiche, nome, cancellazione (vive fuori dalla scena, come Ads)
+│                                classifiche, nome, cancellazione, saldo delle briciole d'oro, missioni
+│                                (vive fuori dalla scena, come Ads)
 ├── Route/
 │   ├── route_segment.gd     Una tratta: nome, cantone, lunghezza, profilo di traffico e strutture, gallerie, meteo possibili
 │   ├── route_data.gd        Le 9 tratte dell'anello
@@ -127,7 +130,7 @@ Scripts/
 │   ├── route_sign.gd        Cartello verde di ingresso tratta a bordo strada (solo scenografia)
 │   ├── tunnel.gd / tunnel_meshes.gd          Gallerie a doppia canna (buio, soffitto, ventilatori)
 │   ├── road_works.gd / road_works_meshes.gd  Cantieri con corsia chiusa e macchinari
-│   ├── pickup.gd            Briciole (ricarica cacca)
+│   ├── pickup.gd            Briciole (ricarica cacca) e briciole d'oro
 │   ├── road_scroller.gd / road_meshes.gd     Strada a segmenti riciclati
 │   ├── structure_meshes.gd
 │   ├── atmosphere.gd        Preset di meteo × ora del giorno e transizioni (cielo, sole, nebbia, luce, montagne, strada bagnata, fari)
@@ -136,7 +139,7 @@ Scripts/
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume, pioggia e neve attorno alla camera
 └── UI/                      HUD (con i suggerimenti), controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown),
-                             classifica mondiale, impostazioni
+                             classifica mondiale, missioni giornaliere, impostazioni
 ```
 
 Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
@@ -478,13 +481,14 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] Plugin Play Games Services v2 per Godot: accesso automatico e collegamento dell'account
 
 ### Fase 6: economia e progressione
-- [ ] Server: migrazione `0003_wallet` (saldo, registro dei movimenti, skin possedute) e servizio del portafoglio atomico e idempotente
-- [ ] Server: regole di guadagno e tetti per gioco (conversione della distanza, raccoglibili, tetto per partita e al giorno)
-- [ ] Briciole d'oro: raccoglibile raro + conversione della distanza a fine partita, calcolate dal server sulle partite con ticket
-- [ ] Nel gioco: saldo solo come copia del server, briciole "in attesa" per le partite offline
-- [ ] "Doppio bottino" con pubblicità a premio (finta)
-- [ ] Negozio di skin del piccione (colori, cappellini), acquisti tramite il server e solo online
-- [ ] 3 missioni giornaliere, azzerate a mezzanotte (ora locale), verificate e riscosse sul server
+- [x] Server: migrazione `0003_wallet` (saldo, registro dei movimenti) e servizio del portafoglio atomico e idempotente
+- [x] Server: regole di guadagno e tetti per gioco (1 ogni 100 m, 5 per briciola d'oro, 200 a partita, 1500 al giorno)
+- [x] Briciole d'oro: raccoglibile raro + conversione della distanza a fine partita, calcolate dal server sulle partite con ticket
+- [x] Nel gioco: saldo solo come copia del server (titolo, game over, missioni); le partite offline valgono 0
+- [x] 3 missioni giornaliere, nuove a mezzanotte UTC, verificate e riscosse sul server
+- [x] Statistiche per le missioni nell'invio della partita (`busHits`, `truckHits`, `nightDistance`, `goldenCrumbs`) con controlli di coerenza sul server
+- [ ] *Da progettare:* skin del piccione e negozio (cosa vendere, aspetto, prezzi), acquisti tramite il server e solo online
+- [ ] "Doppio bottino" con pubblicità a premio (Fase 7, con la verifica SSV)
 - [ ] *Da decidere:* secondo Continua con le briciole, legato al ticket della partita
 
 ### Fase 7: pubblicità vere (Android)

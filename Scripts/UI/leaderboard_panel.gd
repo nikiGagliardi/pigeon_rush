@@ -211,7 +211,7 @@ func _on_delete_pressed() -> void:
 	if _delete_armed <= 0.0:
 		_delete_armed = DELETE_CONFIRM_TIME
 		_delete_button.text = "TAP AGAIN TO DELETE"
-		_set_message("This deletes your online name, scores and ranks. Your local records stay on this phone.", Palette.DANGER)
+		_set_message("This deletes your online name, scores, ranks and golden crumbs. Your local records stay on this phone.", Palette.DANGER)
 		return
 	_delete_armed = 0.0
 	_busy = true

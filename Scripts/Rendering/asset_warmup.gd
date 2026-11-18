@@ -121,7 +121,9 @@ static func _catalog() -> Array[Callable]:
 	jobs.append(func() -> Mesh: return IndicatorVisuals.flare())
 
 	jobs.append(func() -> Mesh: return Pickup.crumbs_mesh())
+	jobs.append(func() -> Mesh: return Pickup.golden_mesh())
 	jobs.append(func() -> Mesh: return Pickup.halo())
+	jobs.append(func() -> Mesh: return Pickup.golden_halo())
 	jobs.append(func() -> Mesh: return Pickup.beam())
 	jobs.append(func() -> Mesh: return PoopSystem.drop_mesh())
 	jobs.append(func() -> Mesh: return PoopSystem.road_splat_mesh())

@@ -42,6 +42,11 @@ var _over_world: Label
 var _countdown_tween: Tween
 var _leaderboard: LeaderboardPanel
 var _leaderboard_button: Button
+var _missions: MissionsPanel
+var _missions_button: Button
+var _title_crumbs: Label
+var _over_crumbs: Label
+var _over_mission: Label
 var _settings_button: Button
 var _pause_settings_button: Button
 ## Schermata da cui si sono aperte le impostazioni (titolo o pausa), a cui si torna.
@@ -64,6 +69,9 @@ func _ready() -> void:
 	_leaderboard = LeaderboardPanel.new()
 	add_child(_leaderboard)
 	_leaderboard.closed.connect(_on_leaderboard_closed)
+	_missions = MissionsPanel.new()
+	add_child(_missions)
+	_missions.closed.connect(_on_missions_closed)
 	settings = SettingsPanel.new()
 	add_child(settings)
 	settings.closed.connect(_on_settings_closed)
@@ -91,6 +99,28 @@ func _on_leaderboard_closed() -> void:
 	_leaderboard_button.grab_focus()
 
 
+## Dal titolo: missioni del giorno; "BACK" riporta al titolo.
+func show_missions() -> void:
+	_title.visible = false
+	_missions.open()
+
+
+func _on_missions_closed() -> void:
+	_title.visible = true
+	_missions_button.grab_focus()
+	set_missions_badge(GameServicesClient.instance.claimable_missions if GameServicesClient.instance != null else 0)
+
+
+## Saldo delle briciole d'oro nel titolo (-1 = mai ricevuto dal server: si mostra 0).
+func set_title_crumbs(balance: int) -> void:
+	_title_crumbs.text = "Golden crumbs: %s" % UiFormat.number(maxi(0, balance))
+
+
+## Missioni completate e non ancora riscosse: il numero compare sul pulsante.
+func set_missions_badge(claimable: int) -> void:
+	_missions_button.text = "MISSIONS (%d)" % claimable if claimable > 0 else "MISSIONS"
+
+
 ## Apre le impostazioni sopra la schermata attuale (titolo o pausa), che torna visibile alla chiusura.
 func open_settings(volume: float, vibration: bool) -> void:
 	_settings_return = _pause if _pause.visible else _title
@@ -111,6 +141,9 @@ func _on_settings_closed() -> void:
 func close_panel() -> bool:
 	if settings.visible:
 		settings.close()
+		return true
+	if _missions.visible:
+		_missions.close()
 		return true
 	if _leaderboard.visible:
 		_leaderboard.close()
@@ -146,15 +179,19 @@ func show_game_over(session: GameSession, best: int, new_record: bool) -> void:
 	_over_route.text = "Reached: %s" % session.route.reached_label()
 	var score := session.score
 	_over_score.text = UiFormat.number(score.score)
-	_over_stats.text = "%s m flown\n%d vehicles splatted  •  best combo x%d\n%d close calls" % [
+	_over_stats.text = "%s m flown  •  %d vehicles splatted\nbest combo x%d  •  %d close calls" % [
 		UiFormat.number(int(score.distance)), score.hits,
 		mini(score.best_combo, GameConfig.MAX_COMBO_MULTIPLIER), score.near_misses]
+	if score.golden_crumbs > 0:
+		_over_stats.text += "  •  %d golden crumb%s" % [score.golden_crumbs, "" if score.golden_crumbs == 1 else "s"]
 	if daily:
 		_over_record.text = "NEW DAILY BEST!" if new_record else "Today's best: %s" % UiFormat.number(best)
 	else:
 		_over_record.text = "NEW BEST!" if new_record else "Best: %s" % UiFormat.number(best)
 	_over_record.add_theme_color_override("font_color", Palette.GOLD if new_record else Color(1.0, 1.0, 1.0, 0.8))
 	set_online_result("")
+	set_crumbs_result("")
+	set_mission_result("")
 	_game_over.visible = true
 	_retry_button.grab_focus()
 
@@ -164,6 +201,18 @@ func set_online_result(text: String, color: Color = Color(1.0, 1.0, 1.0, 0.75)) 
 	_over_world.text = text
 	_over_world.visible = not text.is_empty()
 	_over_world.add_theme_color_override("font_color", color)
+
+
+## Briciole d'oro guadagnate, sotto la riga della classifica ("+25 GOLDEN CRUMBS  •  total 1,234"). Vuota = nascosta.
+func set_crumbs_result(text: String) -> void:
+	_over_crumbs.text = text
+	_over_crumbs.visible = not text.is_empty()
+
+
+## "MISSION COMPLETE: Splat 4 buses" (da riscuotere in MISSIONS). Vuota = nascosta.
+func set_mission_result(text: String) -> void:
+	_over_mission.text = text
+	_over_mission.visible = not text.is_empty()
 
 
 func show_continue(score: int) -> void:
@@ -231,44 +280,60 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _build_title() -> void:
 	var box := VBoxContainer.new()
-	_title = _make_overlay(0.25, box)
+	_title = _make_overlay(0.25, box, 10)
 	box.add_child(UiStyle.make_label("PIGEON RUSH", 76, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
 	box.add_child(UiStyle.make_label("Wrong way down the motorway. Dodge, splat, speed up!", 24, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER))
-	box.add_child(_spacer(10.0))
 
 	_play_button = UiStyle.make_button("PLAY")
 	_play_button.pressed.connect(func() -> void: start_pressed.emit())
 	box.add_child(_centered(_play_button))
 
+	var records := HBoxContainer.new()
+	records.alignment = BoxContainer.ALIGNMENT_CENTER
+	records.add_theme_constant_override("separation", 40)
+	records.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(records)
 	_title_best = UiStyle.make_label("", 24, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_title_best)
+	records.add_child(_title_best)
+	_title_crumbs = UiStyle.make_label("", 24, Palette.GOLDEN_CRUMB, HORIZONTAL_ALIGNMENT_CENTER)
+	records.add_child(_title_crumbs)
+	set_title_crumbs(-1)
 
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 16)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(row)
-	_daily_button = UiStyle.make_button("DAILY CHALLENGE", 26)
-	_daily_button.custom_minimum_size = Vector2(320.0, 64.0)
+	# DAILY CHALLENGE | MISSIONS  /  LEADERBOARD | SETTINGS
+	var top := _title_row(box)
+	_daily_button = _title_button(top, "DAILY CHALLENGE")
 	_daily_button.pressed.connect(func() -> void: daily_pressed.emit())
-	row.add_child(_daily_button)
-	_leaderboard_button = UiStyle.make_button("LEADERBOARD", 26)
-	_leaderboard_button.custom_minimum_size = Vector2(270.0, 64.0)
-	_leaderboard_button.pressed.connect(show_leaderboard)
-	row.add_child(_leaderboard_button)
-	_settings_button = UiStyle.make_button("SETTINGS", 26)
-	_settings_button.custom_minimum_size = Vector2(220.0, 64.0)
-	_settings_button.pressed.connect(func() -> void: settings_pressed.emit())
-	row.add_child(_settings_button)
+	_missions_button = _title_button(top, "MISSIONS")
+	_missions_button.pressed.connect(show_missions)
 	_title_daily = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_daily)
-	box.add_child(_spacer(6.0))
+	var bottom := _title_row(box)
+	_leaderboard_button = _title_button(bottom, "LEADERBOARD")
+	_leaderboard_button.pressed.connect(show_leaderboard)
+	_settings_button = _title_button(bottom, "SETTINGS")
+	_settings_button.pressed.connect(func() -> void: settings_pressed.emit())
 
 	var help := "Left side: drag to fly  •  Right side: tap to drop" if TouchControls.is_touch_device() \
 		else "WASD / arrows: fly  •  Space: drop  •  Esc: pause\nGamepad: left stick  •  A / right trigger"
 	box.add_child(UiStyle.make_label(help, 20, Color(1.0, 1.0, 1.0, 0.75), HORIZONTAL_ALIGNMENT_CENTER))
 	box.add_child(UiStyle.make_label("One hit and you're out! Splat vehicles to fly faster, grab crumbs to refill your poop.", 18,
 		Color(1.0, 1.0, 1.0, 0.6), HORIZONTAL_ALIGNMENT_CENTER))
+
+
+func _title_row(box: VBoxContainer) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(row)
+	return row
+
+
+func _title_button(row: HBoxContainer, text: String) -> Button:
+	var button := UiStyle.make_button(text, 26)
+	button.custom_minimum_size = Vector2(320.0, 60.0)
+	row.add_child(button)
+	return button
 
 
 func _build_pause() -> void:
@@ -305,6 +370,10 @@ func _build_game_over() -> void:
 	box.add_child(_over_record)
 	_over_world = UiStyle.make_label("", 24, Color(1.0, 1.0, 1.0, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_world)
+	_over_crumbs = UiStyle.make_label("", 24, Palette.GOLDEN_CRUMB, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_over_crumbs)
+	_over_mission = UiStyle.make_label("", 22, Palette.INFO, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_over_mission)
 	_over_route = UiStyle.make_label("", 26, Palette.INFO, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_route)
 	_over_stats = UiStyle.make_label("", 22, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
@@ -371,7 +440,7 @@ func _build_toast() -> void:
 	_toast.visible = false
 
 
-func _make_overlay(dim: float, box: VBoxContainer) -> Control:
+func _make_overlay(dim: float, box: VBoxContainer, separation: int = 14) -> Control:
 	var root := Control.new()
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(root)
@@ -392,7 +461,7 @@ func _make_overlay(dim: float, box: VBoxContainer) -> Control:
 	center.add_child(panel)
 
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 14)
+	box.add_theme_constant_override("separation", separation)
 	panel.add_child(box)
 	return root
 

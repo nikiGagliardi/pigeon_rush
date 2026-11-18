@@ -113,6 +113,7 @@ func _ready() -> void:
 	var online := GameServicesClient.ensure(get_tree(), _smoke_test)
 	online.run_result.connect(_on_online_run_result)
 	online.queue_stalled.connect(_on_online_stalled)
+	online.missions_updated.connect(_on_missions_updated)
 
 	var world_environment := SceneryFactory.create_environment()
 	_environment = world_environment.environment
@@ -195,6 +196,7 @@ func _ready() -> void:
 	_traffic.vehicle_passing.connect(_on_vehicle_passing)
 	_poop.vehicle_hit.connect(_on_vehicle_hit)
 	_poop.road_hit.connect(_on_poop_road_hit)
+	online.wallet_changed.connect(_screens.set_title_crumbs)
 
 	if _skip_title_on_load or _smoke_test:
 		_skip_title_on_load = false
@@ -206,6 +208,26 @@ func _ready() -> void:
 	else:
 		_hud.visible = false
 		_screens.show_title(_save.best_score, _daily_info())
+		_refresh_title_online(online)
+
+
+## Saldo e missioni nel titolo: subito l'ultimo valore noto, poi quello del server (se c'è rete).
+func _refresh_title_online(online: GameServicesClient) -> void:
+	_screens.set_title_crumbs(online.balance)
+	_screens.set_missions_badge(online.claimable_missions)
+	if online.enabled:
+		online.fetch_missions() # aggiorna saldo e numero di missioni da riscuotere (segnali)
+
+
+## Una missione completata con l'ultima partita: lo si dice nel game over, il numero va sul pulsante del titolo.
+func _on_missions_updated(newly_complete: PackedStringArray) -> void:
+	_screens.set_missions_badge(GameServicesClient.instance.claimable_missions)
+	if _state != GameState.GAME_OVER or newly_complete.is_empty():
+		return
+	var text := "MISSION COMPLETE: %s" % newly_complete[0] if newly_complete.size() == 1 \
+		else "%d MISSIONS COMPLETE!" % newly_complete.size()
+	_screens.set_mission_result(text + "  •  claim in MISSIONS")
+	_audio.play_ui(Sfx.COMBO, 0.0, 1.1)
 
 
 func _process(delta: float) -> void:
@@ -374,7 +396,8 @@ func _tick_playing(dt: float) -> void:
 
 	var route := _session.route
 	var bonus := route.lap_multiplier * route.conditions.score_multiplier
-	_session.score.tick(dt, ground_step, speed.multiplier * bonus, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
+	_session.score.tick(dt, ground_step, speed.multiplier * bonus, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT,
+		route.conditions.time_of_day == "night")
 	route.update(_session.score.distance)
 
 
@@ -579,7 +602,7 @@ func _on_poop_road_hit(p_position: Vector3) -> void:
 
 
 func _on_vehicle_hit(vehicle: Vehicle, p_position: Vector3) -> void:
-	var points := _session.score.register_hit(vehicle.spec.points)
+	var points := _session.score.register_hit(vehicle.spec.points, vehicle.kind)
 	_session.speed.add_boost(vehicle.spec.boost)
 	_hint(TutorialHints.BOOST)
 
@@ -615,6 +638,13 @@ func _on_pickup_collected(kind: Pickup.PickupKind, _p_position: Vector3) -> void
 			_audio.play(Sfx.PICKUP)
 			_session.score.add_points(20)
 			_texts.spawn("+%d poop" % GameConfig.CRUMBS_AMMO, Palette.CRUMB, text_position, 0.8)
+		Pickup.PickupKind.GOLDEN:
+			_session.score.register_golden_crumb(TrafficSpawner.GOLDEN_POINTS)
+			_audio.play(Sfx.PICKUP, 2.0, 1.35)
+			_audio.play(Sfx.COMBO, -4.0, 1.5)
+			if _save.vibration:
+				Input.vibrate_handheld(40)
+			_texts.spawn("GOLDEN CRUMB!", Palette.GOLDEN_CRUMB, text_position, 1.0, 1.2)
 
 
 func _on_pigeon_hit(p_position: Vector3) -> void:
@@ -847,9 +877,11 @@ func _on_online_run_result(client_run_id: String, result: Dictionary) -> void:
 	if result.is_empty():
 		_screens.set_online_result("")
 		return
+	_show_crumbs_result(result)
 	if result.get("ranked", false) != true:
-		_screens.set_online_result("Not on the world board: the run started offline")
+		_screens.set_online_result("Started offline: no world rank or golden crumbs")
 		return
+	GameServicesClient.instance.fetch_missions() # la partita può aver completato una missione
 	var rank := _result_int(result, "rank")
 	# primo al mondo con questa partita: lo si festeggia
 	if rank == 1 and result.get("personalBest", false) == true:
@@ -862,6 +894,15 @@ func _on_online_run_result(client_run_id: String, result: Dictionary) -> void:
 	else:
 		_screens.set_online_result("WORLD #%s  •  THIS WEEK #%s" % [
 			UiFormat.number(rank), UiFormat.number(_result_int(result, "weekRank"))], Palette.GOLD)
+
+
+## "+25 GOLDEN CRUMBS  •  total 1,234". Il server decide l'importo (tetti per partita e per giorno).
+func _show_crumbs_result(result: Dictionary) -> void:
+	var earned := _result_int(result, "crumbsEarned")
+	if earned <= 0:
+		return
+	_screens.set_crumbs_result("+%s GOLDEN CRUMBS  •  total %s" % [
+		UiFormat.number(earned), UiFormat.number(_result_int(result, "balance"))])
 
 
 func _on_online_stalled() -> void:
@@ -945,8 +986,17 @@ func _smoke_finish_run() -> void:
 	print("[Smoke] partita %d (%s): %.0f s, %d m, %d punti, %d mezzi centrati, %d passaggi a filo, %d impatti ignorati, %d continua, %d mezzi attivi, %s" % [
 		_smoke_runs, "giornaliera" if _session.setup.is_daily() else "normale", _session.elapsed, int(score.distance), score.score,
 		score.hits, score.near_misses, _smoke_hits, _continues_used, _traffic.vehicles.size(), route.reached_label()])
+	print("[Smoke] briciole d'oro: %d comparse, %d raccolte; bus %d, camion %d, di notte %d m" % [
+		_traffic.golden_spawned, score.golden_crumbs, score.bus_hits, score.truck_hits, int(score.night_distance)])
 	if route.segments_completed < 2:
 		_smoke_errors.append("partita %d: solo %d tratte completate" % [_smoke_runs, route.segments_completed])
+	# stessi limiti del server (PigeonRushRules): oltre, la partita sarebbe segnata come sospetta
+	if score.golden_crumbs > int(score.distance / 250.0) + 2:
+		_smoke_errors.append("partita %d: %d briciole d'oro in %d m" % [_smoke_runs, score.golden_crumbs, int(score.distance)])
+	if score.distance > 1000.0 and _traffic.golden_spawned == 0:
+		_smoke_errors.append("partita %d: nessuna briciola d'oro in %d m" % [_smoke_runs, int(score.distance)])
+	if score.bus_hits + score.truck_hits > score.hits or score.night_distance > score.distance + 1.0:
+		_smoke_errors.append("partita %d: statistiche per le missioni incoerenti" % _smoke_runs)
 	var expected_continues := 0 if OS.get_cmdline_user_args().has("--no-ads") else GameConfig.CONTINUES_PER_RUN
 	if _continues_used != expected_continues:
 		_smoke_errors.append("partita %d: Continua usati %d invece di %d" % [_smoke_runs, _continues_used, expected_continues])
@@ -963,6 +1013,7 @@ func _smoke_finish_run() -> void:
 		print("[Smoke] online: %d ticket, %d partite accettate, giocatore %s" % [online.tickets_received, online.runs_accepted, online.full_name()])
 		if online.tickets_received < 2 or online.runs_accepted < 2:
 			_smoke_errors.append("online: %d ticket e %d partite accettate invece di 2" % [online.tickets_received, online.runs_accepted])
+		await _smoke_check_economy(online)
 	if _smoke_errors.is_empty():
 		print("[Smoke] OK")
 		get_tree().quit()
@@ -970,6 +1021,28 @@ func _smoke_finish_run() -> void:
 		for error in _smoke_errors:
 			printerr("[Smoke] ERRORE: ", error)
 		get_tree().quit(1)
+
+
+## Con il server finto: saldo dopo le partite, missioni lette e una ricompensa riscossa.
+func _smoke_check_economy(online: GameServicesClient) -> void:
+	if online.balance <= 0:
+		_smoke_errors.append("online: saldo delle briciole d'oro non ricevuto (%d)" % online.balance)
+	var missions := await online.fetch_missions()
+	var list: Variant = missions.data().get("missions", [])
+	if not missions.ok or not list is Array or (list as Array).size() != 3:
+		_smoke_errors.append("online: missioni non lette (status %d)" % missions.status)
+		return
+	var before := online.balance
+	var claimable := online.claimable_missions
+	for raw: Variant in list as Array:
+		var mission := raw as Dictionary
+		if mission.get("complete", false) == true and mission.get("claimed", false) != true:
+			var claim := await online.claim_mission(str(mission.get("id", "")))
+			if not claim.ok or online.balance <= before or online.claimable_missions != claimable - 1:
+				_smoke_errors.append("online: riscossione della missione non riuscita (status %d)" % claim.status)
+			break
+	print("[Smoke] briciole d'oro: saldo %d → %d, missioni da riscuotere %d → %d" % [
+		before, online.balance, claimable, online.claimable_missions])
 
 
 ## Controlli senza grafica: regole della pubblicità a schermo intero e salvataggio JSON.

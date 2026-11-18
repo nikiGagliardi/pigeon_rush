@@ -47,6 +47,11 @@ var _rng_structures := RandomNumberGenerator.new()
 var _rng_rows := RandomNumberGenerator.new()
 var _rng_pickups := RandomNumberGenerator.new()
 var _rng_lanes := RandomNumberGenerator.new()
+var _rng_golden := RandomNumberGenerator.new()
+## Distanza dopo cui può comparire la prossima briciola d'oro (lo spawner vive una partita sola).
+var _next_golden_at: float = GOLDEN_FIRST_M
+## Per la prova automatica.
+var golden_spawned: int = 0
 var _segment: RouteSegment = RouteData.get_segment(0)
 var _lap: int = 1
 var _route: RouteTracker = null
@@ -60,6 +65,15 @@ var _low_beams_on: bool = false
 
 ## Gallerie e cantieri non attraversano il confine di tratta: il cartello resterebbe nascosto nella montagna.
 const SIGN_CLEARANCE := 40.0
+
+## Briciole d'oro: la prima dopo 250 m, poi una ogni 300-600 m. Il server ne accetta al massimo
+## distanza/250 + 2 per partita (PigeonRushRules): non vanno rese più frequenti di così.
+const GOLDEN_FIRST_M := 250.0
+const GOLDEN_MIN_GAP_M := 300.0
+const GOLDEN_GAP_SPREAD_M := 300.0
+## Una volta "dovuta", compare in una delle file successive (non subito: non si sa mai quando arriva).
+const GOLDEN_ROW_CHANCE := 0.3
+const GOLDEN_POINTS := 50
 
 var _vehicle_pool: NodePool
 var _gantry_pool: NodePool
@@ -85,6 +99,7 @@ func begin_segment(route: RouteTracker) -> void:
 	_rng_rows.seed = route.stream_seed(RouteTracker.Stream.ROWS)
 	_rng_pickups.seed = route.stream_seed(RouteTracker.Stream.PICKUPS)
 	_rng_lanes.seed = route.stream_seed(RouteTracker.Stream.LANES)
+	_rng_golden.seed = route.stream_seed(RouteTracker.Stream.PICKUPS) ^ 0x60D
 
 
 func _ready() -> void:
@@ -561,9 +576,15 @@ static func _vehicle_mask(lane: int, spec: VehicleCatalog.Spec) -> int:
 
 
 func _try_spawn_pickup(session: GameSession, free_mask: int, z: float) -> void:
-	var chance := 0.5 if session.ammo <= 2 else 0.25
-	if free_mask == 0 or _rng_pickups.randf() > chance:
+	if free_mask == 0:
 		return
+	var kind := Pickup.PickupKind.CRUMBS
+	if _golden_due(session.score.distance):
+		kind = Pickup.PickupKind.GOLDEN
+	else:
+		var chance := 0.5 if session.ammo <= 2 else 0.25
+		if _rng_pickups.randf() > chance:
+			return
 
 	# cella libera casuale
 	var pick := _rng_pickups.randi_range(0, Cells.count_of(free_mask) - 1)
@@ -575,9 +596,17 @@ func _try_spawn_pickup(session: GameSession, free_mask: int, z: float) -> void:
 				pick -= 1
 				continue
 			var pickup: Pickup = _pickup_pool.acquire()
-			pickup.activate(Pickup.PickupKind.CRUMBS, Vector3(GameConfig.lane_x(lane), GameConfig.band_center_y(band), z - 8.0))
+			pickup.activate(kind, Vector3(GameConfig.lane_x(lane), GameConfig.band_center_y(band), z - 8.0))
 			_pickups.append(pickup)
 			return
+
+
+func _golden_due(distance: float) -> bool:
+	if distance < _next_golden_at or _rng_golden.randf() > GOLDEN_ROW_CHANCE:
+		return false
+	_next_golden_at = distance + GOLDEN_MIN_GAP_M + _rng_golden.randf() * GOLDEN_GAP_SPREAD_M
+	golden_spawned += 1
+	return true
 
 
 static func _blocked_mask(kinds: Array[int], structure_mask: int) -> int:

@@ -1,11 +1,13 @@
 class_name GameServicesClient
 extends Node
 ## Client del server dei giochi (game-services, https://api.moesagames.ch): account anonimo, ticket di partita,
-## invio dei risultati con coda offline e classifiche mondiali. Il gioco non aspetta mai la rete:
+## invio dei risultati con coda offline, classifiche mondiali, saldo delle briciole d'oro e missioni giornaliere. Il gioco non aspetta mai la rete:
 ## senza connessione si gioca uguale e le partite partono alla prima occasione.
 ##
 ## Come Ads, vive sotto la radice del tree: resta valido quando "Try again" ricarica la scena.
-## Protocollo e difese: game-services/docs/api.md e docs/difesa-classifica.md.
+## Protocollo e difese: game-services/docs/api.md, docs/difesa-classifica.md e docs/difesa-briciole.md.
+##
+## Il saldo lo decide solo il server: qui c'è l'ultimo valore ricevuto (balance), da mostrare e basta.
 
 signal account_changed
 ## Risposta del server per una partita inviata (vuota se il server l'ha rifiutata).
@@ -13,6 +15,10 @@ signal run_result(client_run_id: String, result: Dictionary)
 signal ticket_settled
 ## La coda si è fermata per la rete: le partite rimaste partiranno più tardi.
 signal queue_stalled
+## Nuovo saldo ricevuto dal server (dopo una partita, le missioni o fetch_wallet).
+signal wallet_changed(new_balance: int)
+## Missioni lette dal server: titoli di quelle completate da riscuotere che prima non lo erano.
+signal missions_updated(newly_complete: PackedStringArray)
 
 const DEFAULT_BASE_URL := "https://api.moesagames.ch"
 const GAME_SLUG := "pigeon-rush"
@@ -31,6 +37,10 @@ var base_url: String = DEFAULT_BASE_URL
 var player_id: String = ""
 var display_name: String = ""
 var name_suffix: int = 0
+## Briciole d'oro: ultimo saldo ricevuto dal server, -1 = mai ricevuto (si mostra 0).
+var balance: int = -1
+## Missioni di oggi completate e non riscosse (dall'ultima lettura delle missioni).
+var claimable_missions: int = 0
 
 ## Solo per la prova automatica.
 var tickets_received: int = 0
@@ -46,6 +56,9 @@ var _ticket_pending: bool = false
 ## Cambia a ogni partita: un ticket arrivato in ritardo non finisce nella partita successiva.
 var _run_generation: int = 0
 var _crypto := Crypto.new()
+## Missioni già viste complete oggi: missions_updated segnala solo le nuove.
+var _complete_ids := PackedStringArray()
+var _missions_date: String = ""
 
 
 ## Crea il client la prima volta. Opzioni da riga di comando (solo debug): --api=http://127.0.0.1:8099
@@ -148,6 +161,11 @@ func finish_run(client_run_id: String, session: GameSession, continues_used: int
 			"nearMisses": score.near_misses,
 			"bestCombo": score.best_combo,
 			"continuesUsed": continues_used,
+			# per le missioni giornaliere (nomi letti dal server: PigeonRushRules.Missions)
+			"busHits": score.bus_hits,
+			"truckHits": score.truck_hits,
+			"nightDistance": snappedf(score.night_distance, 0.01),
+			"goldenCrumbs": score.golden_crumbs,
 			"lap": route.lap,
 			"segments": route.segments_completed,
 			"startSegment": setup.start_segment,
@@ -184,6 +202,7 @@ func flush() -> void:
 				_queue.pop_front()
 				_save()
 				runs_accepted += 1
+				_apply_balance(response.data())
 				run_result.emit(str(run.get("clientRunId", "")), response.data())
 			elif status == 401:
 				# account cancellato o token perso: se ne crea uno nuovo, la coda resta
@@ -212,7 +231,7 @@ func wait_idle(max_seconds: float) -> void:
 		left -= 0.1
 
 
-# ------------------------------------------------------------------ classifiche e account
+# ------------------------------------------------------------------ classifiche
 
 ## board: "all", "week", "daily".
 func fetch_leaderboard(board: String, limit: int = 50) -> Response:
@@ -223,6 +242,89 @@ func fetch_leaderboard(board: String, limit: int = 50) -> Response:
 	flush() # già che c'è rete, partono anche le partite rimaste in coda
 	return await _request(HTTPClient.METHOD_GET, "/v1/games/%s/leaderboards/%s?limit=%d" % [GAME_SLUG, board, limit], null, has_account(), REQUEST_TIMEOUT)
 
+
+# ------------------------------------------------------------------ briciole d'oro e missioni
+
+## Saldo aggiornato (wallet_changed se è cambiato). Senza account non chiede niente: il saldo è 0.
+func fetch_wallet() -> Response:
+	if not enabled or not has_account():
+		return Response.failed()
+	var response := await _request(HTTPClient.METHOD_GET, "/v1/games/%s/wallet" % GAME_SLUG, null, true, REQUEST_TIMEOUT)
+	if response.ok:
+		_apply_balance(response.data())
+	return response
+
+
+## Le tre missioni di oggi con il progresso (data().missions). Crea l'account se manca.
+func fetch_missions() -> Response:
+	if not enabled or not await _ensure_account():
+		return Response.failed()
+	flush() # le partite in coda contano per le missioni
+	var response := await _request(HTTPClient.METHOD_GET, "/v1/games/%s/missions" % GAME_SLUG, null, true, REQUEST_TIMEOUT)
+	if response.ok:
+		_apply_balance(response.data())
+		_apply_missions(response.data())
+	return response
+
+
+## Riscuote la ricompensa (risposta come fetch_missions). 422 = non completa, 404 = non è più la missione di oggi.
+func claim_mission(mission_id: String) -> Response:
+	if not enabled or not await _ensure_account():
+		return Response.failed()
+	var path := "/v1/games/%s/missions/%s/claim" % [GAME_SLUG, mission_id.uri_encode()]
+	var response := await _request(HTTPClient.METHOD_POST, path, {}, true, REQUEST_TIMEOUT)
+	if response.ok:
+		_apply_balance(response.data())
+		_apply_missions(response.data())
+	return response
+
+
+## Secondi al prossimo cambio di missioni (mezzanotte UTC, come il server).
+static func seconds_to_missions_reset() -> int:
+	var now := int(Time.get_unix_time_from_system())
+	return 86400 - now % 86400
+
+
+func _apply_missions(body: Dictionary) -> void:
+	var missions: Variant = body.get("missions", [])
+	if not missions is Array:
+		return
+	var date := str(body.get("date", ""))
+	if date != _missions_date:
+		_complete_ids.clear() # giorno nuovo, missioni nuove
+		_missions_date = date
+	var newly := PackedStringArray()
+	var claimable := 0
+	for raw: Variant in missions as Array:
+		if not raw is Dictionary:
+			continue
+		var mission := raw as Dictionary
+		if mission.get("complete", false) != true or mission.get("claimed", false) == true:
+			continue
+		claimable += 1
+		var id := str(mission.get("id", ""))
+		if not _complete_ids.has(id):
+			_complete_ids.append(id)
+			newly.append(str(mission.get("title", "")))
+	claimable_missions = claimable
+	missions_updated.emit(newly)
+
+
+func _apply_balance(body: Dictionary) -> void:
+	var value: Variant = body.get("balance", null)
+	var new_balance := -1
+	if value is float:
+		new_balance = int(value as float)
+	elif value is int:
+		new_balance = value as int
+	if new_balance < 0 or new_balance == balance:
+		return
+	balance = new_balance
+	_save()
+	wallet_changed.emit(balance)
+
+
+# ------------------------------------------------------------------ account
 
 ## status 400 = nome non valido, 409 = nome non disponibile.
 func rename(new_name: String) -> Response:
@@ -248,6 +350,7 @@ func delete_account() -> bool:
 	_queue.clear()
 	_save()
 	account_changed.emit()
+	wallet_changed.emit(balance)
 	return true
 
 
@@ -294,6 +397,9 @@ func _forget_account() -> void:
 	player_id = ""
 	display_name = ""
 	name_suffix = 0
+	balance = -1
+	claimable_missions = 0
+	_complete_ids.clear()
 
 
 func _settle_ticket(generation: int) -> void:
@@ -371,6 +477,7 @@ func _save() -> void:
 		"token": _token,
 		"display_name": display_name,
 		"name_suffix": name_suffix,
+		"balance": balance,
 		"queue": _queue,
 	}, "\t"))
 	file.close()
@@ -391,6 +498,11 @@ func _load() -> void:
 		"displayName": d.get("display_name", ""),
 		"nameSuffix": d.get("name_suffix", 0),
 	})
+	var saved_balance: Variant = d.get("balance", null)
+	if saved_balance is float:
+		balance = int(saved_balance as float)
+	elif saved_balance is int:
+		balance = saved_balance as int
 	var queue: Variant = d.get("queue", [])
 	if queue is Array:
 		for item: Variant in queue as Array:
