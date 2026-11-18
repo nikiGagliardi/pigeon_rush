@@ -16,8 +16,10 @@ Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia,
 
 **Prova automatica**, senza interfaccia. Fa due partite da circa 150 s simulati ciascuna:
 - volo pseudo-casuale, con gli impatti ignorati per passare da gallerie e cantieri;
+- la prima partita è normale (da Roveredo), la seconda è la sfida giornaliera;
 - in ogni partita un Continua con la pubblicità finta, poi la fine e "Try again", che ricarica la scena;
-- prima di partire, controlla le regole della pubblicità a schermo intero e il salvataggio JSON.
+- deve completare almeno 2 tratte per partita, con il cartello a bordo strada allineato al confine (entro 3 m);
+- prima di partire, controlla le regole della pubblicità a schermo intero, l'anello delle tratte, i seed della sfida giornaliera e il salvataggio JSON.
 
 Termina con `[Smoke] OK` se non ci sono errori, altrimenti stampa gli errori ed esce con codice 1. Non tocca il record salvato.
 
@@ -56,10 +58,13 @@ Opzioni (dopo `--`):
 - **Pubblicità a schermo intero:** può arrivare premendo "Try again", mai nelle prime 3 partite della sessione, al massimo una ogni 3 partite, almeno 90 s dopo qualsiasi altra pubblicità e mai dopo una partita in cui si è guardata quella a premio.
 - **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3. Il contatore sta in basso al centro (icone + `6/10`, rosso lampeggiante quando è vuoto) e, su touch, anche sul pulsante DROP.
 - **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. Lampeggia solo il primo mezzo della corsia: quelli dietro non ti vedono.
-- **Cambi di corsia:** ogni tanto un mezzo mette la freccia (1.5 s) e si sposta nella corsia accanto. È raro (ogni 10-19 s all'inizio, 6-11 s a difficoltà massima) e leale: parte solo da mezzi a 3.5-5.5 s dal piccione, solo se nella corsia di destinazione c'è spazio, mai verso una corsia chiusa da un cantiere e mai se chiuderebbe il varco minimo garantito.
+- **Cambi di corsia:** ogni tanto un mezzo mette la freccia (1.5 s) e si sposta nella corsia accanto. È raro (ogni 200-300 m all'inizio, 120-220 m a difficoltà massima) e leale: parte solo da mezzi a 3.5-5.5 s dal piccione, solo se nella corsia di destinazione c'è spazio, mai verso una corsia chiusa da un cantiere e mai se chiuderebbe il varco minimo garantito.
 - **Gallerie (320-560 m):** soffitto a 5.6 m e ventilatori appesi, quindi niente volo alto. All'interno è buio: si vedono lampade, fari e abbaglianti. La camera si abbassa da sola prima del portale.
 - **Lavori:** chiudono la corsia sinistra o destra per 160-240 m. Le due estremità sono speculari (cartello, carrello con freccia, coni e rete in diagonale): una verso il piccione e una verso le auto, che sono quelle a cui serve davvero la chiusura. Un ponteggio con rete arancione alto 8 m (più del volo massimo) impedisce di passarci sopra: la strada si stringe davvero a due corsie, con tutto il traffico lì. La rete è un muro morbido (ti spinge, non ti uccide) e segue la diagonale dei coni. I carrelli con la freccia sono invece ostacoli veri: se sei nella corsia chiusa, spostati prima.
-- **Difficoltà:** la velocità base sale da 16 a 30 m/s; più camion e file piene nei primi 150 s.
+- **Tratte:** si vola su un anello di 9 tratte (vedi "L'anello" più sotto). All'ingresso di ogni tratta c'è un **cartello verde a bordo strada** (oltre il guardrail esterno, solo scenografia) che si vede arrivare da lontano. Quando ci passi accanto compare anche il banner nell'HUD ("WELCOME TO TICINO", oppure il nome della zona) con un bonus di 500 × giro. In alto al centro ci sono il nome della tratta e la barra di avanzamento; il game over mostra fin dove si è arrivati ("Lap 1 · Leventina 62%").
+- **Giri:** ripassando dalla partenza inizia il giro successivo, con i punti distanza moltiplicati (×1.25 al secondo giro, ×1.5 al terzo…) e le file di traffico un po' più fitte.
+- **Sfida giornaliera:** dal titolo, "DAILY CHALLENGE". Ogni giorno (UTC) ha un seed e una tratta di partenza uguali per tutti, quindi lo stesso percorso e lo stesso meteo. Il record del giorno è separato da quello normale.
+- **Difficoltà:** cresce con i metri percorsi (al massimo dopo 4 km), non col tempo. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
 
 ## Architettura
 
@@ -82,6 +87,11 @@ Scripts/
 │   ├── mock_ad_service.gd   Pubblicità finta da 2 s per PC e prove (si può saltare)
 │   ├── interstitial_policy.gd  Quando mostrare quella a schermo intero
 │   └── ads.gd               Accesso statico: il servizio vive fuori dalla scena e sopravvive a "Try again"
+├── Route/
+│   ├── route_segment.gd     Una tratta: nome, cantone, lunghezza, profilo di traffico e strutture, gallerie, meteo possibili
+│   ├── route_data.gd        Le 9 tratte dell'anello
+│   ├── route_tracker.gd     Tratta attuale, avanzamento, giro, seed derivati per tratta
+│   └── run_setup.gd         Partita normale (seed casuale, da Roveredo) o sfida giornaliera (seed della data)
 ├── Rendering/
 │   ├── low_poly_builder.gd  Primitive → ArrayMesh flat-shaded con vertex color
 │   ├── asset_warmup.gd      Pre-costruzione mesh e pre-compilazione shader durante il menu
@@ -99,6 +109,7 @@ Scripts/
 │   ├── ambient_traffic.gd   Traffico scenografico sulla carreggiata opposta
 │   ├── sign_gantry.gd       Portali con cartelli verdi svizzeri
 │   ├── overpass.gd          Cavalcavia
+│   ├── route_sign.gd        Cartello verde di ingresso tratta a bordo strada (solo scenografia)
 │   ├── tunnel.gd / tunnel_meshes.gd          Gallerie a doppia canna (buio, soffitto, ventilatori)
 │   ├── road_works.gd / road_works_meshes.gd  Cantieri con corsia chiusa e macchinari
 │   ├── pickup.gd            Briciole (ricarica cacca)
@@ -124,6 +135,7 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 - **Audio sintetizzato:** tutti gli effetti (`Audio/sfx/*.wav`, 44.1 kHz mono) sono generati da `Tools/synth_sfx.py` (numpy/scipy), niente asset esterni. I passaggi dei mezzi hanno il Doppler già nel file, quindi il Doppler di Godot è spento; i loop (strada, vento, galleria) sono senza cucitura e vengono messi in loop a runtime.
 - **Mesh veloci anche in GDScript:** `LowPolyBuilder` tiene in cache le forme unitarie già espanse in triangoli con la normale di faccia, e le trasforma con `Transform3D * PackedVector3Array` (codice nativo, nessun ciclo per vertice). I 60 mesh del gioco si costruiscono in circa 30 ms.
 - **Ordine di update esplicito** in `main.gd` (`_tick_playing`): niente dipendenze dall'ordine dei `_process`.
+- **Percorso da seed:** ogni partita ha un seed. Il traffico usa flussi casuali separati (strutture, file, briciole, cambi di corsia), ri-seminati all'inizio di ogni tratta a partire da seed, tratta e giro, e la difficoltà dipende dai metri e non dal tempo. Con lo stesso seed le strutture sono identiche alla stessa distanza e il traffico è quasi identico (può cambiare un po' quando una struttura arriva in un momento diverso, perché dipende dalla velocità). Il meteo di ogni tratta viene dallo stesso seed.
 
 ## Struttura di gioco e monetizzazione
 
@@ -131,9 +143,12 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 
 - **Solo mobile:** Android prima, iOS in un secondo momento. Tastiera e gamepad restano solo per sviluppare e provare su PC, senza versione PC pubblicata.
 - **Pubblico 13+:** niente programma Famiglie di Google Play. Grafica e testi restano coerenti con un pubblico di adolescenti e adulti.
-- **Volo continuo diviso in tratte**, senza livelli. Il record si batte in un'unica corsa, e le tratte danno il senso di progresso.
+- **Volo continuo su un anello di tratte**, senza livelli: Roveredo → Bellinzona → Gottardo → Lucerna → Zurigo → Walensee → Coira → San Bernardino → Roveredo, poi si ricomincia. Il record si batte in un'unica corsa, e le tratte danno il senso di progresso.
+- **Partita normale sempre da Roveredo**, così i record sono confrontabili. La **sfida giornaliera** parte ogni giorno da una tratta diversa, così prima o poi tutti vedono tutto il percorso.
+- **Gallerie a doppia canna e 3 corsie** ovunque, anche al Gottardo e al San Bernardino.
+- **Meteo casuale per tratta**, non fisso: viene dal seed della partita, quindi cambia da una partita all'altra ma nella sfida giornaliera è uguale per tutti.
 - **Un solo "Continua" con pubblicità a premio per partita.**
-- **Server proprio su Infomaniak:** una nuova VPS dedicata ai giochi (1 vCPU / 2 GB per iniziare, da scalare quando il monitoraggio lo indica) con un dominio dedicato, condivisa da tutti i giochi. Ospita API, classifica mondiale, informativa privacy e pagina di cancellazione account. Tutto gira in **Docker Compose**.
+- **Server proprio su Infomaniak:** una nuova VPS dedicata ai giochi (1 vCPU / 2 GB per iniziare, da scalare quando il monitoraggio lo indica) con un dominio dedicato (`moesagames.ch`), condivisa da tutti i giochi. Ospita API, classifica mondiale, informativa privacy e pagina di cancellazione account. Tutto gira in **Docker Compose**.
 
 ### Perché il volo continuo e non i livelli
 
@@ -145,16 +160,52 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 | Spazi per la pubblicità | Pochi (tra i livelli) | A ogni morte |
 | Meteo e giorno/notte | Fissi per livello | Cambiano durante il volo, all'uscita delle gallerie |
 
-### Il viaggio sulla A2
+### L'anello
 
-Il volo è un viaggio a tratte reali: **Chiasso → Lugano → Bellinzona → Gottardo → Lucerna → Zurigo → Basilea**, poi si ricomincia a difficoltà più alta.
+Un anello vero di circa 400 km, accorciato circa 1:30 (13,2 km nel gioco): A13 Roveredo → Bellinzona, A2 fino a Lucerna, A14/A4 fino a Zurigo, A3 lungo il lago di Zurigo e il Walensee fino a Coira, poi di nuovo A13 per il San Bernardino fino a Roveredo. Una partita normale fa 1,5-2 km, una buona 4 km: per questo le prime tratte sono corte e il primo cartello arriva presto. Un giro completo richiede 7-8 minuti senza errori.
 
-*Variante da valutare:* al **bivio di Bellinzona** il giocatore sceglie la strada volando nelle corsie di sinistra o di destra: A2 verso il Gottardo oppure **A13 verso il San Bernardino** (Roveredo → Mesocco → galleria del San Bernardino → Thusis → Coira).
+| # | Tratta | Si entra in | Metri | Traffico | Strutture più frequenti | Meteo possibili |
+|---|---|---|---|---|---|---|
+| 1 | Roveredo → Bellinzona | Graubünden | 800 | leggero, pochi camion | portali, cavalcavia | sole, nuvoloso, pioggia |
+| 2 | Bellinzona → Biasca | Ticino | 1100 | normale | portali, cantieri | sole, nuvoloso, pioggia |
+| 3 | Biasca → Airolo (Leventina) | | 1400 | normale, più camion | gallerie | sole, nuvoloso, nebbia, pioggia |
+| 4 | Galleria del Gottardo | | 900 | camion | quasi solo gallerie | (dentro la galleria) |
+| 5 | Göschenen → Lucerna | Uri | 1800 | normale | gallerie, portali | pioggia, nebbia, nuvoloso, sole |
+| 6 | Lucerna → Zurigo | Lucerne | 1800 | **fitto** | **cantieri**, cavalcavia | nebbia, nuvoloso, sole, pioggia |
+| 7 | Zurigo → Walensee | Zurich | 2000 | fitto | gallerie sul lago | nuvoloso, pioggia, sole, nebbia |
+| 8 | Sargans → Thusis | Graubünden | 1600 | normale | portali | sole, nuvoloso, pioggia, neve |
+| 9 | San Bernardino → Roveredo | | 1800 | camion | gallerie | neve, sole, nebbia, nuvoloso |
 
-- All'inizio di ogni tratta compare un cartello ("Welcome to Canton Uri") e si riceve un piccolo bonus.
-- Meteo e ora del giorno cambiano all'uscita delle gallerie (vedi l'idea più sotto). Notte e nebbia danno un moltiplicatore di punti.
-- Il record diventa anche "fin dove sei arrivato" su una mini mappa.
-- Ci sono **missioni giornaliere** ("colpisci 5 bus", "vola 1 km di notte"), che portano il giocatore a fare più partite.
+I valori sono in `Scripts/Route/route_data.gd` e si bilanciano lì.
+
+- Il cartello all'ingresso (a bordo strada e nel banner) dice "WELCOME TO …" quando si cambia cantone, altrimenti il nome della zona ("LEVENTINA"), e "LAP 2" ripassando dalla partenza. Sotto c'è il nome della tratta.
+- Il cartello a bordo strada parte dalla linea di generazione (300 m) e scorre con la strada, quindi arriva accanto al piccione esattamente al cambio di tratta. Gallerie e cantieri non attraversano mai il confine (diventano portali, sempre in base al seed), e nei pressi del cartello non ci sono portali né cavalcavia: il cartello non finisce mai dentro la montagna o sotto un ponte.
+- Le gallerie hanno il nome della tratta sul portale (Gotthard Tunnel, Seelisberg Tunnel, Kerenzerberg Tunnel, San Bernardino Tunnel…).
+- Ci sono **missioni giornaliere** ("colpisci 5 bus", "vola 1 km di notte"), che portano il giocatore a fare più partite (Fase 6).
+- *Da decidere con la Fase 4:* l'ora del giorno, se casuale per tratta come il meteo oppure se avanza durante la partita.
+
+### Ambientazioni per luogo (da valutare)
+
+Ogni tratta dovrebbe essere riconoscibile anche senza leggere il cartello. Idee per tratta, da implementare un po' alla volta:
+
+| Tratta | Paesaggio | Elementi riconoscibili | Note |
+|---|---|---|---|
+| Roveredo → Bellinzona | Valle stretta e verde, boschi di castagni, case in pietra, il fiume Moesa | Ingresso a Bellinzona con i **castelli** (Castelgrande) sulla collina | Tratta d'apertura: luminosa e tranquilla |
+| Bellinzona → Biasca | Piana larga della Riviera, montagne ripide ai lati, vigneti | Cave di granito, ferrovia accanto all'autostrada | Primi camion sul serio |
+| Leventina | Valle che si stringe, gole, rocce scure, cascate | **Viadotti** della Biaschina, chiese con campanile, Airolo ai piedi del passo | Molte gallerie corte |
+| Galleria del Gottardo | Solo galleria: luci gialle, ventilatori, nicchie di sicurezza | Cartelli con i chilometri ("km 8 / 17"), portale nord di Göschenen | Tratta "di respiro", buia; all'uscita cambia il meteo (favonio) |
+| Göschenen → Lucerna | Valle della Reuss, poi il **lago dei Quattro Cantoni** (Urnersee) con montagne a picco sull'acqua | Chiesa di Wassen, Altdorf, Pilatus all'arrivo, il Ponte della Cappella di Lucerna in lontananza | Primo lago: grande piano d'acqua con riflessi |
+| Lucerna → Zurigo | Altopiano: colline, campi, fattorie, boschi, lago di Zugo | Capannoni, centri commerciali, svincoli, **skyline di Zurigo** (Prime Tower) | Più traffico e cantieri: la tratta "urbana" |
+| Zurigo → Walensee | Lago di Zurigo, poi il **Walensee** stretto tra pareti di roccia | Pareti dei Churfirsten a strapiombo, gallerie lungo la riva | Nebbia e pioggia frequenti |
+| Sargans → Thusis | Valle del Reno larga, vigneti della Bündner Herrschaft, poi si stringe | Castello di Sargans, Coira con la città vecchia | Si torna verso le montagne |
+| San Bernardino → Roveredo | Gola della **Via Mala**, alta montagna con neve, poi la discesa nella Mesolcina | Hinterrhein, **castello di Mesocco**, il ritorno a Roveredo | Gran finale del giro: neve possibile, poi la valle verde di partenza |
+
+Come si potrebbe fare, riusando quello che c'è:
+- **Preset di paesaggio per tratta** in `SceneryFactory`: altezza e neve delle montagne, proporzione abeti/latifoglie, colline al posto delle montagne nell'altopiano, colore dell'erba, case sparse.
+- **Laghi:** un piano d'acqua low-poly accanto alla carreggiata opposta, con colore e riflesso semplici (senza riflessi in tempo reale, su mobile costano troppo).
+- **Città:** blocchi low-poly in lontananza (skyline) e capannoni vicino alla strada, generati come le montagne.
+- **Elementi riconoscibili:** un oggetto unico (castello, viadotto, chiesa, skyline) che compare a una distanza fissa della tratta, costruito con `LowPolyBuilder` e preparato da `AssetWarmup` durante il menu.
+- **Transizioni:** il paesaggio cambia gradualmente nei primi 100-200 m della tratta, oppure all'uscita di una galleria (più facile da nascondere).
 
 ### Pubblicità
 
@@ -189,10 +240,24 @@ Il secondo Continua, se lo si aggiunge, **va pagato con le briciole d'oro e non 
 |---|---|---|
 | Percezione | "Me lo sono guadagnato" | "Pay to win", recensioni negative |
 | Conversione | Alta: chiunque gioca ne ha | Bassissima: pochi pagano nel momento della morte |
-| Tecnica | Solo dati salvati in locale | Google Play Billing con un acquisto consumabile a ogni morte |
+| Tecnica | Saldo sul server (registro dei movimenti), verificato a ogni guadagno e spesa | Google Play Billing con un acquisto consumabile a ogni morte |
 | Ricavi | Indiretti: il giocatore guarda più pubblicità "doppio bottino" e forse compra pacchetti di briciole | Diretti ma rari |
 
 Proposta: il secondo Continua costa per esempio 150 briciole e c'è un massimo di 2 Continua per partita (1 con pubblicità + 1 con briciole). Il prezzo va bilanciato con quanto si guadagna in una partita media. I soldi veri entrano solo da **"Rimuovi pubblicità"** (acquisto una tantum) e, in seguito, eventualmente da **pacchetti di briciole**. *Da decidere più avanti, con l'economia già in funzione.*
+
+**Anti-trucchi sulla valuta** (dettagli in `game-services/docs/difesa-briciole.md`). Un saldo salvato solo sul telefono si modifica in un attimo, e il 2° Continua con le briciole influisce sulla classifica. Per questo:
+- **il saldo esiste solo sul server.** Il gioco non dice mai "aggiungi briciole": riferisce cosa è successo (partita, missione, pubblicità, acquisto), e il server verifica e calcola l'importo. In locale resta solo una copia per l'interfaccia;
+- **ogni fonte è verificata:**
+  - distanza e raccoglibili solo da partite con ticket valido e non sospette, con un tetto per partita;
+  - missioni controllate sulle partite salvate;
+  - doppio bottino e Continua con pubblicità tramite **AdMob Server-Side Verification** (callback firmata da Google, con il `runId` in `custom_data`);
+  - pacchetti a pagamento verificati con la **Google Play Developer API**, con storno dei rimborsi;
+- **le spese** (skin, 2° Continua) passano da endpoint del server atomici e idempotenti. Il saldo non può andare sotto zero, e la stessa fonte non paga mai due volte;
+- **il 2° Continua è legato al ticket della partita.** I Continua dichiarati nella partita devono coincidere con quelli registrati, altrimenti la partita è sospetta;
+- **tetti** per partita e al giorno, limite di richieste, controllo delle anomalie e Play Integrity prima dell'uscita pubblica;
+- **offline:** le briciole restano "in attesa" fino alla sincronizzazione. Negozio e 2° Continua con le briciole funzionano solo online.
+
+Effetto collaterale utile: con l'account collegato a Play Giochi il saldo e le skin sopravvivono a una reinstallazione.
 
 ### Classifica mondiale e identità del giocatore
 
@@ -218,8 +283,9 @@ Proposta: il secondo Continua costa per esempio 150 briciole e c'è un massimo d
 | `POST /v1/players` | Crea l'account anonimo e restituisce ID e token |
 | `POST /v1/players/me/google` | Collega Play Giochi (codice monouso) |
 | `PATCH /v1/players/me` | Cambia il nome |
-| `POST /v1/games/{game}/runs` | Invia una partita (punti, distanza, durata, colpi, tratta, continue usati, versione) e restituisce posizione, record personale e record mondiale |
+| `POST /v1/games/{game}/runs` | Invia una partita (modalità normale/giornaliera, seed, punti, distanza, durata, colpi, tratta di partenza, tratta e giro raggiunti, continue usati, versione) e restituisce posizione, record personale e record mondiale |
 | `GET /v1/games/{game}/leaderboards/{all\|week\|day}` | Classifica: primi 100 + "intorno a me" |
+| `GET /v1/games/{game}/daily` | Sfida del giorno: data, seed e tratta di partenza (oggi il gioco li calcola da solo dalla data) e classifica del giorno |
 | `DELETE /v1/players/me` | Cancella account e dati (richiesto da Google Play) |
 
 Tabelle: `games`, `players`, `player_identities` (provider + ID esterno), `runs`, `best_scores` (migliore per gioco, giocatore e periodo).
@@ -325,7 +391,8 @@ Il server ha un utente `deploy` con chiave SSH dedicata (salvata nei secret di G
 - **Anti-trucchi:**
   - controlli di plausibilità sul server: punti compatibili con distanza e colpi, distanza compatibile con la durata e la velocità massima, punti al secondo entro un limite;
   - limite di richieste;
-  - le partite sospette vengono segnalate, non mostrate.
+  - le partite sospette vengono segnalate, non mostrate;
+  - le briciole d'oro hanno il saldo sul server, con le verifiche descritte sopra (`game-services/docs/difesa-briciole.md`).
   - Un segreto nel client non basta, perché si estrae dall'APK. In seguito si può aggiungere la **Play Integrity API**.
 - **Privacy:** nome, punteggi e ID sono dati personali. Servono quindi informativa privacy, modulo "Sicurezza dei dati" e **cancellazione account sia nel gioco sia da una pagina web**, entrambe ospitate sul dominio del server.
 
@@ -353,22 +420,27 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [x] Regole della pubblicità a schermo intero (contatore partite e intervallo minimo) con la versione finta
 - [x] Salvataggio in JSON con versione (record, partite giocate, impostazioni) al posto del solo record
 
-### Fase 3: tratte della A2
-- [ ] Definizione dati delle tratte (nome, cantone, lunghezza, meteo possibili)
-- [ ] Cartelli "Welcome to Canton …" e bonus di tratta
-- [ ] Barra di avanzamento e mini mappa nell'HUD, "fin dove sei arrivato" nel game over
-- [ ] Giro successivo dopo Basilea, a difficoltà più alta
-- [ ] *Variante da valutare:* bivio di Bellinzona con la A13 del San Bernardino (Roveredo, Mesocco, Thusis, Coira)
+### Fase 3: tratte dell'anello
+- [x] Dati delle 9 tratte (nome, cantone, lunghezza, profilo di traffico e strutture, gallerie, meteo possibili)
+- [x] Anello Roveredo → … → Roveredo con giri successivi (moltiplicatore dei punti, traffico più fitto)
+- [x] Seed della partita, flussi casuali separati e ri-seminati per tratta, difficoltà legata alla distanza
+- [x] Sfida giornaliera: stesso seed e stessa tratta di partenza per tutti, record del giorno separato (salvataggio v2)
+- [x] Cartello "Welcome to …" con bonus di tratta, barra di avanzamento nell'HUD, "Reached" nel game over
+- [x] Cartello verde 3D a bordo strada all'ingresso di ogni tratta (oltre al banner)
+- [ ] *Più avanti, con le ambientazioni:* portale con le destinazioni della tratta qualche centinaio di metri prima ("Biasca", "Airolo", "Luzern")
+- [ ] Ambientazioni per luogo (vedi "Ambientazioni per luogo"): preset di paesaggio, laghi, città, elementi riconoscibili
+- [ ] Mini mappa dell'anello nel game over
 
 ### Fase 4: meteo e giorno/notte
 - [ ] Preset d'ambiente (nebbia, sole, luce ambiente, cielo, luci) con transizioni graduali, riusando il sistema delle gallerie
-- [ ] Sole, nuvoloso, tramonto, nebbia
+- [ ] Meteo di ogni tratta già scelto dal seed (`RouteTracker.weather`): applicarlo all'ingresso della tratta o all'uscita della galleria successiva
+- [ ] Sole, nuvoloso, tramonto, nebbia, neve (San Bernardino, valle del Reno)
 - [ ] Notte: cielo scuro, anabbaglianti sempre accesi, lampioni
 - [ ] Pioggia: poche particelle attorno alla camera, strada lucida, nuovi suoni (pioggia in loop, tuono)
 - [ ] Moltiplicatore di punti nell'HUD ("Foggy ×1.2", "Night ×1.3")
 
 ### Fase 5: server dei giochi e classifica mondiale
-- [ ] Nuova VPS Infomaniak (1 vCPU / 2 GB) + dominio dedicato ai giochi, sottodominio `api.`
+- [ ] Nuova VPS Infomaniak (1 vCPU / 2 GB) + dominio dedicato ai giochi (`moesagames.ch`), sottodominio `api.`
 - [ ] Docker Compose: Caddy (HTTPS), API, PostgreSQL 17, backup notturno verso kDrive, swap
 - [ ] Monitoraggio: hub Beszel sulla VPS esistente, agent sul server dei giochi, avvisi su CPU, RAM, disco, server giù e `/health`
 - [ ] Repository `game-services` separato: API ASP.NET Core + PostgreSQL + Dapper (giocatori, collegamento a Play Giochi, partite, classifiche sempre/settimana/giorno), migrazioni DbUp, test con Testcontainers
@@ -381,28 +453,33 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] Cancellazione account dalle impostazioni del gioco
 
 ### Fase 6: economia e progressione
-- [ ] Briciole d'oro: raccoglibile raro + conversione della distanza a fine partita
+- [ ] Server: migrazione `0003_wallet` (saldo, registro dei movimenti, skin possedute) e servizio del portafoglio atomico e idempotente
+- [ ] Server: regole di guadagno e tetti per gioco (conversione della distanza, raccoglibili, tetto per partita e al giorno)
+- [ ] Briciole d'oro: raccoglibile raro + conversione della distanza a fine partita, calcolate dal server sulle partite con ticket
+- [ ] Nel gioco: saldo solo come copia del server, briciole "in attesa" per le partite offline
 - [ ] "Doppio bottino" con pubblicità a premio (finta)
-- [ ] Negozio di skin del piccione (colori, cappellini)
-- [ ] 3 missioni giornaliere, azzerate a mezzanotte (ora locale)
-- [ ] *Da decidere:* secondo Continua con le briciole
+- [ ] Negozio di skin del piccione (colori, cappellini), acquisti tramite il server e solo online
+- [ ] 3 missioni giornaliere, azzerate a mezzanotte (ora locale), verificate e riscosse sul server
+- [ ] *Da decidere:* secondo Continua con le briciole, legato al ticket della partita
 
 ### Fase 7: pubblicità vere (Android)
 - [ ] Scelta del plugin AdMob e `AdMobAdService` in GDScript (i plugin espongono API GDScript: nessun ponte)
 - [ ] Consenso UMP al primo avvio
 - [ ] ID di prova, poi ID reali; caricamento anticipato; gestione degli errori senza bloccare il gioco
+- [ ] AdMob Server-Side Verification: callback sul server per doppio bottino e Continua, con `runId` in `custom_data`
 - [ ] Test sul S24 e su un telefono di fascia bassa
 - **Da provare presto:** i plugin Java su Android (vale anche per Play Giochi), anche in parallelo con la Fase 3.
 
 ### Fase 8: acquisti in-app
 - [ ] Plugin Google Play Billing
 - [ ] "Rimuovi pubblicità" (acquisto una tantum) con ripristino degli acquisti
-- [ ] *Eventuale:* pacchetti di briciole d'oro
+- [ ] *Eventuale:* pacchetti di briciole d'oro, verificati dal server con la Play Developer API, consumati dopo l'accredito, con storno dei rimborsi (Voided Purchases API)
 
 ### Fase 9: pubblicazione su Google Play
 - [x] Account Play Console creato (in verifica)
 - [ ] Test chiuso con 12 tester per 14 giorni, da avviare subito (vedi sopra)
 - [ ] Firma dell'app, AAB, livello API richiesto
+- [ ] Play Integrity su invio delle partite e acquisti (gioco + verifica sul server)
 - [ ] Modulo "Sicurezza dei dati" (pubblicità + server), link alla cancellazione account, questionario IARC (13+)
 - [ ] Scheda dello store: icona, screenshot, video breve
 - [ ] Test interno → test chiuso (12 tester × 14 giorni) → produzione
@@ -454,6 +531,7 @@ Note di design:
 | Macchina operatrice nei cantieri | `works_beep` in loop | 3D, sulla prima macchina |
 | Countdown 3-2-1, GO | `countdown_beep`, `countdown_go` | bus UI |
 | Secondi dell'anello "Continue?" | `ui_click` più acuto | |
+| Ingresso in una tratta nuova | `countdown_go` più acuto | insieme al cartello e al bonus |
 | Schianto, schermata di game over | `crash`, `game_over` | |
 | Pulsanti, pausa | `ui_click` | bus UI, funziona anche in pausa |
 | Loop | `road_loop`, `wind_loop`, `tunnel_loop` | volume (e tono del vento) in base a velocità, boost e buio della galleria |

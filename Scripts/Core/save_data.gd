@@ -4,7 +4,7 @@ extends RefCounted
 ## Scrittura su file temporaneo + rinomina: un'uscita a metà non corrompe il salvataggio.
 ## Al primo avvio importa il record dal vecchio file .cfg.
 
-const VERSION := 1
+const VERSION := 2
 const FILE_PATH := "user://save.json"
 const TEMP_PATH := "user://save.json.tmp"
 const LEGACY_PATH := "user://pigeon_rush.cfg"
@@ -12,6 +12,10 @@ const LEGACY_PATH := "user://pigeon_rush.cfg"
 var best_score: int = 0
 var best_distance: int = 0
 var runs_played: int = 0
+
+# sfida giornaliera: si tiene solo il giorno attuale
+var daily_date: String = ""
+var daily_best: int = 0
 
 # impostazioni
 var sfx_volume: float = 1.0
@@ -48,7 +52,7 @@ func save() -> bool:
 	return DirAccess.rename_absolute(TEMP_PATH, FILE_PATH) == OK
 
 
-## Aggiorna i record con la partita appena finita. Restituisce true se il punteggio è un nuovo record.
+## Aggiorna i record con la partita normale appena finita. Restituisce true se il punteggio è un nuovo record.
 func record_run(score: int, distance: int) -> bool:
 	runs_played += 1
 	best_distance = maxi(best_distance, distance)
@@ -58,12 +62,32 @@ func record_run(score: int, distance: int) -> bool:
 	return true
 
 
+## Sfida giornaliera: record separato, valido solo per quella data. Restituisce true se è il nuovo record del giorno.
+func record_daily(date: String, score: int) -> bool:
+	runs_played += 1
+	if date != daily_date:
+		daily_date = date
+		daily_best = 0
+	if score <= daily_best:
+		return false
+	daily_best = score
+	return true
+
+
+func daily_best_for(date: String) -> int:
+	return daily_best if date == daily_date else 0
+
+
 func to_dict() -> Dictionary:
 	return {
 		"version": VERSION,
 		"best_score": best_score,
 		"best_distance": best_distance,
 		"runs_played": runs_played,
+		"daily": {
+			"date": daily_date,
+			"best": daily_best,
+		},
 		"settings": {
 			"sfx_volume": sfx_volume,
 			"vibration": vibration,
@@ -78,6 +102,13 @@ static func from_dict(d: Dictionary) -> SaveData:
 	data.best_distance = maxi(0, _int(d, "best_distance", 0))
 	data.runs_played = maxi(0, _int(d, "runs_played", 0))
 
+	var raw_daily: Variant = d.get("daily", {})
+	if raw_daily is Dictionary:
+		var daily := raw_daily as Dictionary
+		var date: Variant = daily.get("date", "")
+		data.daily_date = date as String if date is String else ""
+		data.daily_best = maxi(0, _int(daily, "best", 0))
+
 	var raw_settings: Variant = d.get("settings", {})
 	if raw_settings is Dictionary:
 		var settings := raw_settings as Dictionary
@@ -91,7 +122,9 @@ static func _migrate(d: Dictionary) -> Dictionary:
 	var version := _int(d, "version", 0)
 	if version > VERSION:
 		push_warning("SaveData: versione %d più recente del gioco (%d), letta come %d" % [version, VERSION, VERSION])
-	# esempio per il futuro: if version < 2: d["golden_crumbs"] = 0
+	# v1 → v2: aggiunta la sfida giornaliera ("daily"); i valori mancanti valgono 0, niente da convertire
+	if version < 2 and not d.has("daily"):
+		d["daily"] = { "date": "", "best": 0 }
 	return d
 
 

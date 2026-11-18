@@ -18,10 +18,6 @@ const DARKNESS_RAMP := 22.0
 const CAMERA_MARGIN := 0.45
 const CAMERA_APPROACH := 14.0
 
-const NAMES: Array[String] = [
-	"San Bernardino Tunnel", "Roveredo Tunnel", "Gotthard Tunnel",
-	"Vedeggio-Cassarate Tunnel", "Melide-Grancia Tunnel",
-]
 
 var length: float = 0.0
 
@@ -48,12 +44,13 @@ func _init() -> void:
 	add_child(_name_label)
 
 
-func activate(p_length: float, p_front_z: float, rng: RandomNumberGenerator) -> void:
+## p_name: nome sul portale, scelto dalla tratta (vedi RouteSegment.tunnel_names).
+func activate(p_length: float, p_front_z: float, p_name: String) -> void:
 	reset_flags()
 	length = p_length
 	position = Vector3(0.0, 0.0, p_front_z - p_length * 0.5 - PORTAL_DEPTH)
 	_mesh.mesh = TunnelMeshes.get_mesh(p_length)
-	_name_label.text = NAMES[rng.randi_range(0, NAMES.size() - 1)]
+	_name_label.text = p_name
 	_name_label.position = Vector3(TunnelMeshes.SIGN_X, TunnelMeshes.SIGN_Y, p_length * 0.5 + 0.2)
 
 	var half := p_length * 0.5

@@ -58,7 +58,8 @@ const LOW_FLY_HEIGHT := 2.0
 const LOW_FLY_BONUS := 1.5
 
 # --- Difficoltà ---
-const DIFFICULTY_RAMP_TIME := 150.0
+## Metri per arrivare alla difficoltà massima (circa 150 s di volo).
+const DIFFICULTY_RAMP_DISTANCE := 4000.0
 const START_GRACE := 2.0
 
 # --- Ciclo di partita e Continua ---
@@ -72,6 +73,11 @@ const CONTINUES_PER_RUN := 1
 ## Alla ripresa spariscono traffico e strutture fino a questa distanza davanti al piccione.
 const REVIVE_CLEAR_DISTANCE := 70.0
 const REVIVE_INVULNERABILITY := 2.5
+
+# --- Tratte ---
+const SEGMENT_BONUS := 500 # × giro, all'ingresso in ogni tratta nuova
+## Dal secondo giro le file di traffico si avvicinano un po' a ogni giro.
+const LAP_TRAFFIC_BONUS := 0.08
 
 
 static func lane_x(lane: int) -> float:

@@ -93,6 +93,7 @@ static func _catalog() -> Array[Callable]:
 	jobs.append(func() -> Mesh: return VehicleMeshes.splat())
 	jobs.append(func() -> Mesh: return StructureMeshes.gantry_frame())
 	jobs.append(func() -> Mesh: return StructureMeshes.overpass())
+	jobs.append(func() -> Mesh: return RouteSign.mesh())
 	for bits in range(1, 0b111 + 1):
 		jobs.append(func() -> Mesh: return StructureMeshes.panels(bits))
 
@@ -124,7 +125,7 @@ static func _catalog() -> Array[Callable]:
 
 ## Etichette 3D con tutti i caratteri e le dimensioni usate, per popolare l'atlante dei font.
 func _add_glyph_previews() -> void:
-	var glyphs := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzüöä0123456789+-!.,'/ "
+	var glyphs := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzüöäÜÖÄ0123456789+-!.,'/→ "
 	var styles: Array[Vector2i] = [Vector2i(64, 14), Vector2i(64, 0), Vector2i(72, 0), Vector2i(96, 0)] # (dimensione, contorno)
 	for i in styles.size():
 		var label := Label3D.new()

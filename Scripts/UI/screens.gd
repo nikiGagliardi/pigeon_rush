@@ -3,6 +3,7 @@ extends Control
 ## Schermate a tutto schermo: titolo, pausa, "Continue?", game over e countdown. Gira anche col gioco in pausa.
 
 signal start_pressed
+signal daily_pressed
 signal resume_pressed
 ## Ricomincia dalla pausa (partita abbandonata).
 signal restart_pressed
@@ -21,6 +22,10 @@ var _resume_button: Button
 var _watch_button: Button
 var _retry_button: Button
 var _title_best: Label
+var _title_daily: Label
+var _daily_button: Button
+var _over_title: Label
+var _over_route: Label
 var _continue_score: Label
 var _continue_ring: CountdownRing
 var _over_score: Label
@@ -42,9 +47,11 @@ func _ready() -> void:
 	hide_all()
 
 
-func show_title(best: int) -> void:
+## daily_info: riga sotto il pulsante della sfida giornaliera (tratta di partenza e record del giorno).
+func show_title(best: int, daily_info: String) -> void:
 	hide_all()
 	_title_best.text = "Best: %s" % UiFormat.number(best) if best > 0 else ""
+	_title_daily.text = daily_info
 	_title.visible = true
 	_play_button.grab_focus()
 
@@ -55,14 +62,22 @@ func show_pause() -> void:
 	_resume_button.grab_focus()
 
 
+## best e new_record si riferiscono alla modalità della partita (normale o sfida del giorno).
 func show_game_over(session: GameSession, best: int, new_record: bool) -> void:
 	hide_all()
+	var daily := session.setup.is_daily()
+	_over_title.text = "DAILY CHALLENGE" if daily else "SQUASHED!"
+	_over_title.add_theme_color_override("font_color", UiStyle.ACCENT if daily else Palette.DANGER)
+	_over_route.text = "Reached: %s" % session.route.reached_label()
 	var score := session.score
 	_over_score.text = UiFormat.number(score.score)
 	_over_stats.text = "%s m flown\n%d vehicles splatted  •  best combo x%d\n%d close calls" % [
 		UiFormat.number(int(score.distance)), score.hits,
 		mini(score.best_combo, GameConfig.MAX_COMBO_MULTIPLIER), score.near_misses]
-	_over_record.text = "NEW BEST!" if new_record else "Best: %s" % UiFormat.number(best)
+	if daily:
+		_over_record.text = "NEW DAILY BEST!" if new_record else "Today's best: %s" % UiFormat.number(best)
+	else:
+		_over_record.text = "NEW BEST!" if new_record else "Best: %s" % UiFormat.number(best)
 	_over_record.add_theme_color_override("font_color", Palette.GOLD if new_record else Color(1.0, 1.0, 1.0, 0.8))
 	_game_over.visible = true
 	_retry_button.grab_focus()
@@ -139,6 +154,13 @@ func _build_title() -> void:
 
 	_title_best = UiStyle.make_label("", 24, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_best)
+
+	_daily_button = UiStyle.make_button("DAILY CHALLENGE", 28)
+	_daily_button.custom_minimum_size = Vector2(340.0, 64.0)
+	_daily_button.pressed.connect(func() -> void: daily_pressed.emit())
+	box.add_child(_centered(_daily_button))
+	_title_daily = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_title_daily)
 	box.add_child(_spacer(6.0))
 
 	var help := "Left side: drag to fly  •  Right side: tap to drop" if TouchControls.is_touch_device() \
@@ -166,11 +188,14 @@ func _build_pause() -> void:
 func _build_game_over() -> void:
 	var box := VBoxContainer.new()
 	_game_over = _make_overlay(0.45, box)
-	box.add_child(UiStyle.make_label("SQUASHED!", 64, Palette.DANGER, HORIZONTAL_ALIGNMENT_CENTER))
+	_over_title = UiStyle.make_label("SQUASHED!", 64, Palette.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_over_title)
 	_over_score = UiStyle.make_label("0", 72, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_score)
 	_over_record = UiStyle.make_label("", 28, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_record)
+	_over_route = UiStyle.make_label("", 26, Palette.INFO, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_over_route)
 	_over_stats = UiStyle.make_label("", 22, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_stats)
 	box.add_child(_spacer(8.0))

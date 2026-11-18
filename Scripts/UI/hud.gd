@@ -17,6 +17,14 @@ var _ammo_count: Label
 var _ammo: IconBar
 var _boost: IconBar
 var _ammo_panel: PanelContainer
+var _route_name: Label
+var _route_bar: ProgressBar
+var _banner: Control
+var _banner_title: Label
+var _banner_subtitle: Label
+var _banner_bonus: Label
+var _banner_time: float = 0.0
+var _banner_delay: float = 0.0
 
 var _last_score: int = -1
 var _last_distance: int = -1
@@ -27,6 +35,10 @@ var _combo_pop: float = 0.0
 var _ammo_pop: float = 0.0
 var _empty_blink: float = 0.0
 var _ammo_text_color: Color = Color.WHITE
+var _last_segment: int = -1
+var _last_lap: int = -1
+
+const BANNER_TIME := 2.8
 
 
 func _ready() -> void:
@@ -87,11 +99,27 @@ func _ready() -> void:
 	right.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	right.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 22)
 
-	# --- centro in alto: combo ---
+	# --- centro in alto: tratta e avanzamento, sotto la combo ---
+	var route := VBoxContainer.new()
+	route.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	route.add_theme_constant_override("separation", 4)
+	_route_name = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
+	route.add_child(_route_name)
+	_route_bar = ProgressBar.new()
+	_route_bar.show_percentage = false
+	_route_bar.custom_minimum_size = Vector2(300.0, 10.0)
+	_route_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_route_bar.add_theme_stylebox_override("background", UiStyle.flat(Color(0.0, 0.0, 0.0, 0.4), 5, 0.0))
+	_route_bar.add_theme_stylebox_override("fill", UiStyle.flat(Palette.INFO, 5, 0.0))
+	route.add_child(_route_bar)
+	add_child(route)
+	route.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	route.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 16)
+
 	_combo = UiStyle.make_label("", 44, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	add_child(_combo)
 	_combo.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_combo.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 24)
+	_combo.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 72)
 	_combo.pivot_offset = Vector2(0.0, 30.0)
 
 	# --- centro in basso: suggerimenti + pannello munizioni ---
@@ -110,6 +138,21 @@ func _ready() -> void:
 	bottom.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 24)
 	_lock.modulate = Color(1.0, 1.0, 1.0, 0.0)
 	_low_fly.modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+	_build_banner()
+
+
+## Cartello all'ingresso di una tratta: "WELCOME TO TICINO", nome della tratta, bonus.
+## delay: attesa prima di mostrarlo (a inizio partita, dopo il "GO!").
+func show_route_banner(title: String, subtitle: String, bonus: int, delay: float = 0.0) -> void:
+	_banner_title.text = title
+	_banner_subtitle.text = subtitle
+	_banner_bonus.text = "+%s" % UiFormat.number(bonus) if bonus > 0 else ""
+	_banner_time = BANNER_TIME
+	_banner_delay = delay
+	_banner.visible = delay <= 0.0
+	_banner.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	_banner.scale = Vector2.ONE * 1.15
 
 
 func set_best(best: int) -> void:
@@ -150,6 +193,71 @@ func refresh(dt: float, session: GameSession, locked: bool, low_flying: bool) ->
 
 	_fade_to(_lock, 1.0 if locked and session.ammo > 0 else 0.0, dt)
 	_fade_to(_low_fly, 1.0 if low_flying else 0.0, dt)
+
+	_refresh_route(session.route)
+	_tick_banner(dt)
+
+
+func _refresh_route(route: RouteTracker) -> void:
+	if route.segment_index != _last_segment or route.lap != _last_lap:
+		_last_segment = route.segment_index
+		_last_lap = route.lap
+		var lap_text := "LAP %d  •  " % route.lap if route.lap > 1 else ""
+		_route_name.text = "%s%s" % [lap_text, route.segment.name]
+	_route_bar.value = route.progress * 100.0
+
+
+func _tick_banner(dt: float) -> void:
+	if _banner_time <= 0.0:
+		return
+	if _banner_delay > 0.0:
+		_banner_delay -= dt
+		_banner.visible = _banner_delay <= 0.0
+		return
+	_banner_time = maxf(0.0, _banner_time - dt)
+	var shown := BANNER_TIME - _banner_time
+	# entra in 0,25 s, resta, esce nell'ultimo mezzo secondo
+	var alpha := minf(shown / 0.25, 1.0) * minf(_banner_time / 0.5, 1.0)
+	_banner.modulate = Color(1.0, 1.0, 1.0, alpha)
+	var s := lerpf(1.15, 1.0, minf(shown / 0.25, 1.0))
+	_banner.pivot_offset = _banner.size * 0.5
+	_banner.scale = Vector2(s, s)
+	if _banner_time <= 0.0:
+		_banner.visible = false
+
+
+func _build_banner() -> void:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# verde dei cartelli autostradali svizzeri
+	var style := UiStyle.flat(Color("1f6b3a"), 14, 18.0)
+	style.border_color = Color.WHITE
+	style.set_border_width_all(4)
+	panel.add_theme_stylebox_override("panel", style)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 2)
+	_banner_title = UiStyle.make_label("", 40, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_banner_subtitle = UiStyle.make_label("", 24, Color(1.0, 1.0, 1.0, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
+	_banner_bonus = UiStyle.make_label("", 30, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_banner_title)
+	box.add_child(_banner_subtitle)
+	box.add_child(_banner_bonus)
+	panel.add_child(box)
+
+	_banner = CenterContainer.new()
+	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_banner.add_child(panel)
+	add_child(_banner)
+	_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_banner.offset_left = -400.0
+	_banner.offset_right = 400.0
+	_banner.offset_top = 130.0
+	_banner.offset_bottom = 290.0
+	_banner.visible = false
 
 
 ## Pannello ben visibile con le cacche disponibili: icone + "6/10".

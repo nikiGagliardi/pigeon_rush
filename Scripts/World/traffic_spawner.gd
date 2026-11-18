@@ -3,6 +3,8 @@ extends Node3D
 ## Genera, muove e ricicla traffico, strutture e raccoglibili.
 ## Il traffico arriva a "file" (righe): ogni riga lascia almeno MIN_FREE_CELLS celle libere
 ## e almeno una adiacente a una cella libera della riga precedente, quindi c'è sempre un varco raggiungibile.
+## Casualità a flussi separati (strutture, file, briciole, cambi di corsia), ri-seminati a ogni tratta dal seed
+## della partita: stesso seed = stesse strutture alla stessa distanza, e traffico quasi identico.
 
 const Kind := VehicleCatalog.Kind
 
@@ -40,7 +42,22 @@ var tunnel_darkness: float = 0.0
 
 var _structures: Array[Hazard] = []
 var _pickups: Array[Pickup] = []
-var _rng := RandomNumberGenerator.new()
+var _rng := RandomNumberGenerator.new() # solo dettagli che non cambiano il percorso (lampeggi)
+var _rng_structures := RandomNumberGenerator.new()
+var _rng_rows := RandomNumberGenerator.new()
+var _rng_pickups := RandomNumberGenerator.new()
+var _rng_lanes := RandomNumberGenerator.new()
+var _segment: RouteSegment = RouteData.get_segment(0)
+var _lap: int = 1
+var _route: RouteTracker = null
+
+# cartelli verdi a bordo strada all'ingresso delle tratte (solo scenografia)
+var _sign_pool: NodePool
+var _signs: Array[RouteSign] = []
+var _sign_for_completed: int = -1 # tratte completate quando è stato messo l'ultimo cartello
+
+## Gallerie e cantieri non attraversano il confine di tratta: il cartello resterebbe nascosto nella montagna.
+const SIGN_CLEARANCE := 40.0
 
 var _vehicle_pool: NodePool
 var _gantry_pool: NodePool
@@ -53,16 +70,29 @@ var _row_countdown: float = 0.0
 var _structure_countdown: float = 90.0
 var _grace: float = GameConfig.START_GRACE
 var _prev_free_mask: int = Cells.ALL
-var _lane_change_cooldown: float = 12.0
+## In metri percorsi (come la difficoltà), non in secondi.
+var _lane_change_cooldown: float = 240.0
+
+
+## Inizio di una tratta (anche la prima): profilo della tratta e flussi casuali ri-seminati.
+func begin_segment(route: RouteTracker) -> void:
+	_route = route
+	_segment = route.segment
+	_lap = route.lap
+	_rng_structures.seed = route.stream_seed(RouteTracker.Stream.STRUCTURES)
+	_rng_rows.seed = route.stream_seed(RouteTracker.Stream.ROWS)
+	_rng_pickups.seed = route.stream_seed(RouteTracker.Stream.PICKUPS)
+	_rng_lanes.seed = route.stream_seed(RouteTracker.Stream.LANES)
 
 
 func _ready() -> void:
 	_vehicle_pool = NodePool.new(self, func() -> Node3D: return Vehicle.new(), 24)
 	_gantry_pool = NodePool.new(self, func() -> Node3D: return SignGantry.new(), 3)
 	_overpass_pool = NodePool.new(self, func() -> Node3D: return Overpass.new(), 2)
-	_tunnel_pool = NodePool.new(self, func() -> Node3D: return Tunnel.new(), 1)
-	_works_pool = NodePool.new(self, func() -> Node3D: return RoadWorks.new(), 1)
+	_tunnel_pool = NodePool.new(self, func() -> Node3D: return Tunnel.new(), 2)
+	_works_pool = NodePool.new(self, func() -> Node3D: return RoadWorks.new(), 2)
 	_pickup_pool = NodePool.new(self, func() -> Node3D: return Pickup.new(), 8)
+	_sign_pool = NodePool.new(self, func() -> Node3D: return RouteSign.new(), 2)
 
 
 func tick(dt: float, ground_step: float, traffic_step: float, session: GameSession) -> void:
@@ -71,6 +101,8 @@ func tick(dt: float, ground_step: float, traffic_step: float, session: GameSessi
 
 	if not spawning_enabled:
 		return
+
+	_try_spawn_route_sign()
 
 	if _grace > 0.0:
 		_grace -= dt
@@ -86,12 +118,12 @@ func tick(dt: float, ground_step: float, traffic_step: float, session: GameSessi
 		_spawn_row(session, -_row_countdown)
 		_row_countdown += _row_spacing(session)
 
-	_lane_change_cooldown -= dt
+	_lane_change_cooldown -= ground_step
 	if _lane_change_cooldown <= 0.0:
 		if _try_start_lane_change(session):
-			_lane_change_cooldown = lerpf(10.0, 6.0, session.difficulty) + _rng.randf_range(0.0, 5.0)
+			_lane_change_cooldown = lerpf(200.0, 120.0, session.difficulty) + _rng_lanes.randf_range(0.0, 100.0)
 		else:
-			_lane_change_cooldown = 1.0 # nessun candidato valido: riprova tra poco
+			_lane_change_cooldown = 20.0 # nessun candidato valido: riprova tra poco
 
 
 ## Collisioni, passaggi a filo e raccolta oggetti.
@@ -203,12 +235,55 @@ func _move_and_recycle(dt: float, ground_step: float, traffic_step: float) -> vo
 		_release_structure(structure)
 		_remove_swap(_structures, i)
 
+	for i in range(_signs.size() - 1, -1, -1):
+		var sign := _signs[i]
+		sign.position += ground_delta
+		if sign.position.z > GameConfig.DESPAWN_Z:
+			_sign_pool.release(sign)
+			_remove_swap(_signs, i)
+
 	for i in range(_pickups.size() - 1, -1, -1):
 		var pickup := _pickups[i]
 		pickup.position += traffic_delta
 		pickup.animate(dt)
 		if pickup.position.z > GameConfig.DESPAWN_Z:
 			_remove_pickup_at(i)
+
+
+## Il cartello della tratta successiva entra dalla linea di spawn e si muove con la strada:
+## arriva accanto al piccione esattamente al cambio di tratta.
+func _try_spawn_route_sign() -> void:
+	if _route == null or _sign_for_completed == _route.segments_completed:
+		return
+	var remaining := _route.distance_to_end
+	if remaining > -GameConfig.SPAWN_Z:
+		return
+	_sign_for_completed = _route.segments_completed
+	var index := _route.next_segment_index()
+	var lap := _route.next_lap()
+	var lap_start := index == _route.start_segment and lap > 1
+	var header := "WELCOME TO" if not lap_start and RouteTracker.enters_canton(index) else ""
+	var sign: RouteSign = _sign_pool.acquire()
+	sign.activate(header, _route.title_for(index, lap), RouteData.get_segment(index).name, -remaining)
+	_signs.append(sign)
+
+
+## Z del cartello di tratta più vicino al piccione (INF se non ce ne sono). Usato dalla prova automatica.
+func nearest_route_sign_z() -> float:
+	var best := INF
+	for sign: RouteSign in _signs:
+		if absf(sign.position.z) < absf(best):
+			best = sign.position.z
+	return best
+
+
+## True se una struttura lunga occupied metri, generata ora in z, coprirebbe il prossimo cambio di tratta.
+func _covers_route_boundary(z: float, occupied: float) -> bool:
+	if _route == null:
+		return false
+	var start := -z # metri tra il piccione e l'inizio della struttura
+	var boundary := _route.distance_to_end
+	return boundary > start - SIGN_CLEARANCE and boundary < start + occupied + SIGN_CLEARANCE
 
 
 func _release_structure(structure: Hazard) -> void:
@@ -286,35 +361,52 @@ func _update_tunnel_darkness() -> void:
 ## Restituisce la lunghezza occupata dalla struttura oltre la sua profondità standard (gallerie, cantieri).
 func _spawn_structure(overshoot: float) -> float:
 	var z := GameConfig.SPAWN_Z + overshoot
-	var roll := _rng.randf()
+	var rng := _rng_structures
+	var seg := _segment
+	var total := seg.tunnel_weight + seg.works_weight + seg.gantry_weight + seg.overpass_weight
+	var roll := rng.randf() * maxf(total, 0.001)
+	# accanto al cartello della tratta niente strutture (portali e cavalcavia ci passerebbero attraverso)
+	if _covers_route_boundary(z, StructureMeshes.OVERPASS_DEPTH):
+		return 0.0
+	# galleria o cantiere che coprirebbero il cambio di tratta diventano un portale (sempre legato al seed)
+	var force_gantry := false
 
-	if roll < 0.16:
-		var length: float = TunnelMeshes.LENGTHS[_rng.randi_range(0, TunnelMeshes.LENGTHS.size() - 1)]
-		var tunnel: Tunnel = _tunnel_pool.acquire()
-		tunnel.activate(length, z, _rng)
-		_structures.append(tunnel)
-		return length + Tunnel.PORTAL_DEPTH
+	if roll < seg.tunnel_weight:
+		var length: float = TunnelMeshes.LENGTHS[rng.randi_range(0, TunnelMeshes.LENGTHS.size() - 1)]
+		var names := seg.tunnel_names
+		var tunnel_name := names[rng.randi_range(0, names.size() - 1)]
+		if not _covers_route_boundary(z, length + Tunnel.PORTAL_DEPTH):
+			var tunnel: Tunnel = _tunnel_pool.acquire()
+			tunnel.activate(length, z, tunnel_name)
+			_structures.append(tunnel)
+			return length + Tunnel.PORTAL_DEPTH
+		force_gantry = true
+	roll -= seg.tunnel_weight
 
-	if roll < 0.32:
-		var length: float = RoadWorksMeshes.LENGTHS[_rng.randi_range(0, RoadWorksMeshes.LENGTHS.size() - 1)]
-		var works: RoadWorks = _works_pool.acquire()
+	if not force_gantry and roll < seg.works_weight:
+		var length: float = RoadWorksMeshes.LENGTHS[rng.randi_range(0, RoadWorksMeshes.LENGTHS.size() - 1)]
 		# il cartello "ROADWORKS" sta 40 m prima del cantiere: è lui a comparire per primo sulla linea di spawn
-		var lane := 0 if _rng.randf() < 0.5 else GameConfig.LANE_COUNT - 1
-		works.activate(lane, length, z - RoadWorksMeshes.SIGN_AHEAD, _rng)
-		_structures.append(works)
-		return length + RoadWorksMeshes.SIGN_AHEAD * 2.0 # un cartello per estremità
+		var lane := 0 if rng.randf() < 0.5 else GameConfig.LANE_COUNT - 1
+		var occupied := length + RoadWorksMeshes.SIGN_AHEAD * 2.0 # un cartello per estremità
+		if not _covers_route_boundary(z, occupied):
+			var works: RoadWorks = _works_pool.acquire()
+			works.activate(lane, length, z - RoadWorksMeshes.SIGN_AHEAD, rng)
+			_structures.append(works)
+			return occupied
+		force_gantry = true
+	roll -= seg.works_weight
 
-	if roll < 0.74:
-		var panel_roll := _rng.randf()
+	if force_gantry or roll < seg.gantry_weight or seg.overpass_weight <= 0.0:
+		var panel_roll := rng.randf()
 		var lane_bits: int
 		if panel_roll < 0.5:
-			lane_bits = 1 << _rng.randi_range(0, GameConfig.LANE_COUNT - 1)
+			lane_bits = 1 << rng.randi_range(0, GameConfig.LANE_COUNT - 1)
 		elif panel_roll < 0.85:
-			lane_bits = 0b111 & ~(1 << _rng.randi_range(0, GameConfig.LANE_COUNT - 1))
+			lane_bits = 0b111 & ~(1 << rng.randi_range(0, GameConfig.LANE_COUNT - 1))
 		else:
 			lane_bits = 0b111
 		var gantry: SignGantry = _gantry_pool.acquire()
-		gantry.activate(lane_bits, z, _rng)
+		gantry.activate(lane_bits, z, rng)
 		_structures.append(gantry)
 	else:
 		var overpass: Overpass = _overpass_pool.acquire()
@@ -343,7 +435,7 @@ func _spawn_row(session: GameSession, overshoot: float) -> void:
 	var count := mini(_pick_vehicle_count(difficulty), open_lanes)
 	var placed := 0
 	while placed < count:
-		var lane := _rng.randi_range(0, GameConfig.LANE_COUNT - 1)
+		var lane := _rng_rows.randi_range(0, GameConfig.LANE_COUNT - 1)
 		if kinds[lane] >= 0 or (closed_lanes & (1 << lane)) != 0:
 			continue
 		kinds[lane] = _pick_kind(difficulty)
@@ -369,8 +461,8 @@ func _spawn_row(session: GameSession, overshoot: float) -> void:
 		if kinds[lane] < 0:
 			continue
 		var vehicle: Vehicle = _vehicle_pool.acquire()
-		var x := GameConfig.lane_x(lane) + _rng.randf_range(-0.25, 0.25)
-		vehicle.activate(kinds[lane] as Kind, _rng.randi_range(0, 15), lane, x, z + _rng.randf_range(-2.5, 2.5))
+		var x := GameConfig.lane_x(lane) + _rng_rows.randf_range(-0.25, 0.25)
+		vehicle.activate(kinds[lane] as Kind, _rng_rows.randi_range(0, 15), lane, x, z + _rng_rows.randf_range(-2.5, 2.5))
 		vehicles.append(vehicle)
 
 	_try_spawn_pickup(session, free_mask, z)
@@ -406,7 +498,7 @@ func _try_start_lane_change(session: GameSession) -> bool:
 	var min_ahead := LANE_CHANGE_MIN_TIME * approach
 	var max_ahead := minf(LANE_CHANGE_MAX_AHEAD, LANE_CHANGE_MAX_TIME * approach)
 
-	var start := _rng.randi_range(0, vehicles.size() - 1)
+	var start := _rng_lanes.randi_range(0, vehicles.size() - 1)
 	for n in vehicles.size():
 		var vehicle := vehicles[(start + n) % vehicles.size()]
 		if vehicle.is_changing_lane:
@@ -415,7 +507,7 @@ func _try_start_lane_change(session: GameSession) -> bool:
 		if ahead < min_ahead or ahead > max_ahead:
 			continue
 		# prova prima una direzione a caso, poi l'altra
-		var first := -1 if _rng.randf() < 0.5 else 1
+		var first := -1 if _rng_lanes.randf() < 0.5 else 1
 		for d in 2:
 			var target := vehicle.lane + (first if d == 0 else -first)
 			if _can_change_lane(vehicle, target, speed):
@@ -456,11 +548,11 @@ static func _vehicle_mask(lane: int, spec: VehicleCatalog.Spec) -> int:
 
 func _try_spawn_pickup(session: GameSession, free_mask: int, z: float) -> void:
 	var chance := 0.5 if session.ammo <= 2 else 0.25
-	if free_mask == 0 or _rng.randf() > chance:
+	if free_mask == 0 or _rng_pickups.randf() > chance:
 		return
 
 	# cella libera casuale
-	var pick := _rng.randi_range(0, Cells.count_of(free_mask) - 1)
+	var pick := _rng_pickups.randi_range(0, Cells.count_of(free_mask) - 1)
 	for lane in GameConfig.LANE_COUNT:
 		for band in GameConfig.BAND_COUNT:
 			if not Cells.has(free_mask, lane, band):
@@ -504,7 +596,7 @@ static func _lane_to_clear(kinds: Array[int], reachable: int) -> int:
 
 
 func _pick_vehicle_count(difficulty: float) -> int:
-	var r := _rng.randf()
+	var r := _rng_rows.randf()
 	if r < 0.08:
 		return 0
 	if r < 0.08 + 0.10 + 0.35 * difficulty:
@@ -514,27 +606,41 @@ func _pick_vehicle_count(difficulty: float) -> int:
 	return 1
 
 
+## Probabilità per tipo di mezzo; camion e bus scalano col profilo della tratta.
 func _pick_kind(difficulty: float) -> Kind:
-	var r := _rng.randf()
-	if r < 0.05:
+	var heavy := _segment.heavy
+	var cabrio := 0.05
+	var clean := 0.05
+	var truck := (0.11 + 0.06 * difficulty) * heavy
+	var bus := (0.11 + 0.07 * difficulty) * heavy
+	var van := 0.18
+	var car := 0.50 - 0.13 * difficulty
+	var r := _rng_rows.randf() * (cabrio + clean + truck + bus + van + car)
+	if r < cabrio:
 		return Kind.CABRIO
-	if r < 0.10:
+	r -= cabrio
+	if r < clean:
 		return Kind.CLEAN_CAR
-	if r < 0.21 + 0.06 * difficulty:
+	r -= clean
+	if r < truck:
 		return Kind.TRUCK
-	if r < 0.32 + 0.13 * difficulty:
+	r -= truck
+	if r < bus:
 		return Kind.BUS
-	if r < 0.50 + 0.13 * difficulty:
+	r -= bus
+	if r < van:
 		return Kind.VAN
 	return Kind.CAR
 
 
 func _row_spacing(session: GameSession) -> float:
-	return lerpf(46.0, 30.0, session.difficulty) + session.speed.approach_speed * 0.15 + _rng.randf_range(-4.0, 6.0)
+	var spacing := lerpf(46.0, 30.0, session.difficulty) + session.speed.approach_speed * 0.15 + _rng_rows.randf_range(-4.0, 6.0)
+	var density := _segment.traffic * (1.0 + GameConfig.LAP_TRAFFIC_BONUS * (_lap - 1))
+	return spacing / maxf(0.5, density)
 
 
 func _next_structure_gap(difficulty: float) -> float:
-	return lerpf(150.0, 85.0, difficulty) + _rng.randf_range(0.0, 50.0)
+	return lerpf(150.0, 85.0, difficulty) + _rng_structures.randf_range(0.0, 50.0)
 
 
 func _remove_pickup_at(index: int) -> void:

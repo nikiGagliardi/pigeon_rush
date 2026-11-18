@@ -13,8 +13,9 @@ const Sfx := GameAudio.Sfx
 ## Velocità del mondo nel menu e nel countdown di inizio partita.
 const TITLE_WORLD_SPEED := GameConfig.BASE_PIGEON_SPEED * 0.6
 
-## Dopo "Try again" la scena viene ricaricata: salta il titolo.
+## Dopo "Try again" la scena viene ricaricata: salta il titolo e riparte con questa partita.
 static var _skip_title_on_load: bool = false
+static var _next_setup: RunSetup = null
 ## Prova automatica senza interfaccia: godot --headless --path . -- --smoke-test
 static var _smoke_runs: int = 0
 static var _smoke_checked: bool = false
@@ -150,7 +151,8 @@ func _ready() -> void:
 
 	_hud.set_best(_save.best_score)
 	_hud.pause_pressed.connect(_pause)
-	_screens.start_pressed.connect(_start_game)
+	_screens.start_pressed.connect(func() -> void: _start_game(RunSetup.normal()))
+	_screens.daily_pressed.connect(func() -> void: _start_game(RunSetup.daily()))
 	_screens.resume_pressed.connect(_resume)
 	_screens.restart_pressed.connect(_restart)
 	_screens.retry_pressed.connect(_on_retry_pressed)
@@ -166,10 +168,14 @@ func _ready() -> void:
 
 	if _skip_title_on_load or _smoke_test:
 		_skip_title_on_load = false
-		_start_game()
+		var setup := _next_setup if _next_setup != null else RunSetup.normal()
+		if _smoke_test:
+			setup = RunSetup.daily() if _smoke_runs == 1 else RunSetup.normal() # la seconda prova è la sfida giornaliera
+		_next_setup = null
+		_start_game(setup)
 	else:
 		_hud.visible = false
-		_screens.show_title(_save.best_score)
+		_screens.show_title(_save.best_score, _daily_info())
 
 
 func _process(delta: float) -> void:
@@ -252,7 +258,9 @@ func _tick_playing(dt: float) -> void:
 	if _state != GameState.PLAYING:
 		return # impatto durante le collisioni
 
-	_session.score.tick(dt, ground_step, speed.multiplier, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
+	var route := _session.route
+	_session.score.tick(dt, ground_step, speed.multiplier * route.lap_multiplier, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
+	route.update(_session.score.distance)
 
 
 func _tick_ambient(dt: float) -> void:
@@ -498,13 +506,53 @@ func _on_pigeon_hit(p_position: Vector3) -> void:
 	_traffic.spawning_enabled = false
 
 
-func _start_game() -> void:
+func _start_game(setup: RunSetup) -> void:
 	if _warmup != null and is_instance_valid(_warmup) and not _warmup.is_done:
 		_warmup.finish_now()
+
+	_session.begin(setup)
+	_session.route.segment_entered.connect(_on_segment_entered)
+	_traffic.begin_segment(_session.route)
+	_hud.set_best(_save.daily_best_for(setup.daily_date) if setup.is_daily() else _save.best_score)
 
 	Ads.policy.on_run_started()
 	_hud.visible = true
 	_start_countdown(TITLE_WORLD_SPEED)
+
+
+## "Today: from Lucerne → Zurich  •  best 12,345" sotto il pulsante della sfida giornaliera.
+func _daily_info() -> String:
+	var today := RunSetup.daily()
+	var text := "Today: from %s" % RouteData.get_segment(today.start_segment).name
+	var best := _save.daily_best_for(today.daily_date)
+	if best > 0:
+		text += "  •  best %s" % UiFormat.number(best)
+	return text
+
+
+## Ingresso in una tratta nuova: profilo del traffico, cartello e bonus.
+func _on_segment_entered(index: int, lap: int) -> void:
+	var route := _session.route
+	_traffic.begin_segment(route)
+	var bonus := GameConfig.SEGMENT_BONUS * lap
+	_session.score.add_points(bonus)
+	_hud.show_route_banner(_banner_title(index, lap), route.segment.name, bonus)
+	_audio.play_ui(Sfx.COUNTDOWN_GO, -2.0, 1.15)
+	if _smoke_test:
+		var sign_z := _traffic.nearest_route_sign_z()
+		print("[Smoke]   tratta: %s (giro %d, meteo %s) a %d m, cartello a %.1f m" % [route.segment.name, lap, route.weather, int(_session.score.distance), sign_z])
+		if absf(sign_z) > 3.0:
+			_smoke_errors.append("cartello della tratta %s non allineato al confine (%.1f m)" % [route.segment.name, sign_z])
+
+
+## Banner dell'HUD: come il cartello 3D, con "WELCOME TO" davanti al cantone.
+func _banner_title(index: int, lap: int) -> String:
+	var route := _session.route
+	var title := route.title_for(index, lap)
+	var lap_start := index == route.start_segment and lap > 1
+	if not lap_start and RouteTracker.enters_canton(index):
+		return "WELCOME TO %s" % title
+	return title
 
 
 ## world_speed: velocità del mondo durante il countdown (quella del menu all'inizio, 0 alla ripresa).
@@ -520,9 +568,15 @@ func _start_countdown(world_speed: float) -> void:
 
 
 func _begin_play() -> void:
+	var first_start := _session.score.distance <= 0.0 and _continues_used == 0
 	_state = GameState.PLAYING
 	_screens.show_countdown("GO!")
 	_audio.play_ui(Sfx.COUNTDOWN_GO)
+	if first_start:
+		# cartello della tratta di partenza, senza bonus
+		var route := _session.route
+		var title := "DAILY CHALLENGE" if _session.setup.is_daily() else route.segment.region.to_upper()
+		_hud.show_route_banner(title, route.segment.name, 0, 0.7)
 	# riparte alla velocità del countdown e accelera fino a quella piena (vedi RESUME_RAMP)
 	var speed := _session.speed
 	speed.time_scale = _countdown_world_speed / maxf(1.0, speed.base_speed * speed.multiplier)
@@ -555,6 +609,7 @@ func _resume() -> void:
 func _restart() -> void:
 	get_tree().paused = false
 	_skip_title_on_load = true
+	_next_setup = _session.setup.retry() # la normale con un seed nuovo, la giornaliera uguale
 	get_tree().reload_current_scene()
 
 
@@ -616,12 +671,20 @@ func _finish_run() -> void:
 	_state = GameState.GAME_OVER
 	_touch.enabled = false
 	var score := _session.score
-	var new_record := _save.record_run(score.score, int(score.distance))
+	var setup := _session.setup
+	var new_record: bool
+	var best: int
+	if setup.is_daily():
+		new_record = _save.record_daily(setup.daily_date, score.score)
+		best = _save.daily_best
+	else:
+		new_record = _save.record_run(score.score, int(score.distance))
+		best = _save.best_score
 	if not _smoke_test:
 		_save.save() # la prova automatica non tocca il record vero
 	Ads.policy.on_run_finished()
-	_hud.set_best(_save.best_score)
-	_screens.show_game_over(_session, _save.best_score, new_record)
+	_hud.set_best(best)
+	_screens.show_game_over(_session, best, new_record)
 	_audio.play_ui(Sfx.GAME_OVER)
 	if _smoke_test:
 		_smoke_finish_run()
@@ -671,14 +734,20 @@ func _smoke_state_shots(dt: float) -> void:
 func _smoke_finish_run() -> void:
 	_smoke_runs += 1
 	var score := _session.score
-	print("[Smoke] partita %d: %.0f s, %d m, %d punti, %d mezzi centrati, %d passaggi a filo, %d impatti ignorati, %d continua, %d mezzi attivi" % [
-		_smoke_runs, _session.elapsed, int(score.distance), score.score, score.hits, score.near_misses, _smoke_hits,
-		_continues_used, _traffic.vehicles.size()])
+	var route := _session.route
+	print("[Smoke] partita %d (%s): %.0f s, %d m, %d punti, %d mezzi centrati, %d passaggi a filo, %d impatti ignorati, %d continua, %d mezzi attivi, %s" % [
+		_smoke_runs, "giornaliera" if _session.setup.is_daily() else "normale", _session.elapsed, int(score.distance), score.score,
+		score.hits, score.near_misses, _smoke_hits, _continues_used, _traffic.vehicles.size(), route.reached_label()])
+	if route.segments_completed < 2:
+		_smoke_errors.append("partita %d: solo %d tratte completate" % [_smoke_runs, route.segments_completed])
 	var expected_continues := 0 if OS.get_cmdline_user_args().has("--no-ads") else GameConfig.CONTINUES_PER_RUN
 	if _continues_used != expected_continues:
 		_smoke_errors.append("partita %d: Continua usati %d invece di %d" % [_smoke_runs, _continues_used, expected_continues])
 	if _smoke_runs < 2:
-		_on_retry_pressed.call_deferred()
+		if _smoke_shots:
+			get_tree().create_timer(0.6).timeout.connect(_on_retry_pressed) # tempo per la schermata del game over
+		else:
+			_on_retry_pressed.call_deferred()
 		return
 	if _smoke_errors.is_empty():
 		print("[Smoke] OK")
@@ -692,6 +761,7 @@ func _smoke_finish_run() -> void:
 ## Controlli senza grafica: regole della pubblicità a schermo intero e salvataggio JSON.
 func _smoke_self_checks() -> void:
 	_smoke_errors.append_array(InterstitialPolicy.self_check())
+	_smoke_errors.append_array(RouteTracker.self_check())
 
 	var data := SaveData.new()
 	data.best_score = 12345
@@ -709,4 +779,11 @@ func _smoke_self_checks() -> void:
 		_smoke_errors.append("salvataggio: dati diversi dopo l'andata e ritorno")
 	if SaveData.from_dict({ "best_score": "x", "settings": 3 }).best_score != 0:
 		_smoke_errors.append("salvataggio: valori non validi accettati")
-	print("[Smoke] controlli di pubblicità e salvataggio: %s" % ("ok" if _smoke_errors.is_empty() else "%d errori" % _smoke_errors.size()))
+	var v1 := SaveData.from_dict({ "version": 1, "best_score": 900 })
+	if v1.best_score != 900 or v1.daily_best != 0:
+		_smoke_errors.append("salvataggio: conversione dalla versione 1 sbagliata")
+	if not v1.record_daily("2026-11-18", 100) or v1.record_daily("2026-11-18", 50) or not v1.record_daily("2026-11-19", 10):
+		_smoke_errors.append("salvataggio: record giornaliero sbagliato")
+	if v1.best_score != 900:
+		_smoke_errors.append("salvataggio: la sfida giornaliera ha cambiato il record normale")
+	print("[Smoke] controlli di pubblicità, tratte e salvataggio: %s" % ("ok" if _smoke_errors.is_empty() else "%d errori" % _smoke_errors.size()))
