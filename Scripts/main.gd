@@ -58,7 +58,8 @@ var _next_shot: float = 3.0
 func _ready() -> void:
 	Actions.ensure_registered()
 	_best = SaveData.load_best()
-	_smoke_test = OS.get_cmdline_user_args().has("--smoke-test")
+	# mai nelle build di release: la prova automatica ignora gli impatti
+	_smoke_test = OS.is_debug_build() and OS.get_cmdline_user_args().has("--smoke-test")
 	_smoke_shots = OS.get_cmdline_user_args().has("--shots")
 
 	var world_environment := SceneryFactory.create_environment()
