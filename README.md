@@ -2,17 +2,25 @@
 
 Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia, centra i mezzi con la cacca per guadagnare velocità e punti.
 
-**Stack:** Godot 4.7.2 (.NET) · C# · .NET 10 · renderer Mobile · mobile (Android, poi iOS); PC solo per sviluppo
+**Stack:** Godot 4.7.2 · GDScript tipizzato · renderer Mobile · mobile (Android, poi iOS); PC solo per sviluppo
+
+> Fino al tag `csharp-final` il gioco era in C#/.NET. È passato a GDScript perché l'export C# per Android e iOS è ancora sperimentale in Godot, mentre i plugin per pubblicità, Play Giochi e acquisti si usano direttamente da GDScript.
 
 ## Come avviarlo
 
-1. Installa **Godot 4.7.x – versione .NET** e il **.NET 10 SDK**.
+1. Installa **Godot 4.7.x standard** (non serve più la versione .NET né l'SDK .NET).
 2. Apri `project.godot` dal Project Manager di Godot.
-3. Premi **Build** (martello in alto a destra), poi **F5**.
+3. Premi **F5**.
 
-Se usi una versione di Godot diversa dalla 4.7.2, aggiorna l'`Sdk` in `PigeonRush.csproj` (es. `Godot.NET.Sdk/4.7.1`).
+**Tipi obbligatori:** nelle impostazioni del progetto una variabile o un parametro senza tipo è un errore (`untyped_declaration`), e gli accessi non sicuri sono segnalati come avviso.
 
-> **Target framework:** desktop su `net10.0`, Android su `net9.0` (condizione nel `.csproj`), perché il template di export Android di Godot supporta solo .NET 9. Il codice usa solo API disponibili in entrambe le versioni.
+**Prova automatica**, senza interfaccia: due partite da circa 150 s simulati ciascuna, con volo pseudo-casuale, impatti ignorati per passare da gallerie e cantieri e un ricaricamento di scena. Termina con `[Smoke] OK` se non ci sono errori:
+
+```
+godot --headless --path . --fixed-fps 60 -- --smoke-test
+```
+
+Con un driver video (non `--headless`) l'opzione `--shots` salva una schermata ogni 6 s in `user://`.
 
 ## Comandi
 
@@ -43,44 +51,46 @@ Tutta la scena viene costruita **da codice** (`Scenes/Main.tscn` contiene solo i
 
 ```
 Scripts/
-├── Main.cs                  Regista: costruzione scena, stato di gioco, ordine di update
+├── main.gd                  Regista: costruzione scena, stato di gioco, ordine di update, prova automatica
 ├── Core/
-│   ├── GameConfig.cs        Tutte le costanti di bilanciamento
-│   ├── GameSession.cs       Stato partita (munizioni, tempo, difficoltà, game over)
-│   ├── SpeedController.cs   Velocità base + boost cumulabili
-│   ├── ScoreService.cs      Punteggio, combo, statistiche
-│   ├── Cells.cs             Griglia 3 corsie × 3 fasce (bitmask) per il varco garantito
-│   ├── NodePool.cs          Pool generico di nodi
-│   ├── Actions.cs           Input map registrata via codice
-│   └── SaveData.cs          Record in user://
+│   ├── game_config.gd       Tutte le costanti di bilanciamento
+│   ├── game_session.gd      Stato partita (munizioni, tempo, difficoltà, game over)
+│   ├── speed_controller.gd  Velocità base + boost cumulabili
+│   ├── score_service.gd     Punteggio, combo, statistiche
+│   ├── cells.gd             Griglia 3 corsie × 3 fasce (bitmask) per il varco garantito
+│   ├── node_pool.gd         Pool generico di nodi
+│   ├── actions.gd           Input map registrata via codice
+│   └── save_data.gd         Record in user://
 ├── Rendering/
-│   ├── LowPolyBuilder.cs    Primitive → ArrayMesh flat-shaded con vertex color
-│   ├── AssetWarmup.cs       Pre-costruzione mesh e pre-compilazione shader durante il menu
-│   └── Palette.cs           Colori e materiali condivisi
+│   ├── low_poly_builder.gd  Primitive → ArrayMesh flat-shaded con vertex color
+│   ├── asset_warmup.gd      Pre-costruzione mesh e pre-compilazione shader durante il menu
+│   └── palette.gd           Colori e materiali condivisi
 ├── Player/
-│   ├── PigeonController.cs  Movimento X/Y con inerzia, inclinazione, caduta finale
-│   ├── PigeonModel.cs       Piccione procedurale con ali animate
-│   └── PoopSystem.cs        Mirino, traiettoria d'intercetto, macchie
+│   ├── pigeon_controller.gd Movimento X/Y con inerzia, inclinazione, caduta finale
+│   ├── pigeon_model.gd      Piccione procedurale con ali animate
+│   └── poop_system.gd       Mirino, traiettoria d'intercetto, macchie
 ├── World/
-│   ├── TrafficSpawner.cs    File di traffico, strutture, raccoglibili, collisioni
-│   ├── Hazard.cs            Base ostacoli (AABB manuali, sweep anti-tunneling)
-│   ├── Vehicle.cs / VehicleCatalog.cs / VehicleMeshes.cs   (auto, furgoni, camion, bus, cabrio)
-│   ├── HighBeamVisuals.cs   Bagliori e coni additivi degli abbaglianti (nessuna luce dinamica)
-│   ├── IndicatorVisuals.cs  Frecce gialle lampeggianti per i cambi di corsia
-│   ├── AmbientTraffic.cs    Traffico scenografico sulla carreggiata opposta
-│   ├── SignGantry.cs        Portali con cartelli verdi svizzeri
-│   ├── Overpass.cs          Cavalcavia
-│   ├── Tunnel.cs / TunnelMeshes.cs       Gallerie a doppia canna (buio, soffitto, ventilatori)
-│   ├── RoadWorks.cs / RoadWorksMeshes.cs Cantieri con corsia chiusa e macchinari
-│   ├── Pickup.cs            Briciole (ricarica cacca)
-│   ├── RoadScroller.cs / RoadMeshes.cs   Strada a segmenti riciclati
-│   ├── StructureMeshes.cs
-│   └── SceneryFactory.cs    Cielo, sole, nebbia, montagne
-├── Audio/GameAudio.cs       Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
-├── CameraRig/ChaseCamera.cs Inseguimento, FOV dinamico, shake
+│   ├── traffic_spawner.gd   File di traffico, strutture, raccoglibili, collisioni
+│   ├── hazard.gd            Base ostacoli (AABB manuali, sweep anti-tunneling)
+│   ├── vehicle.gd / vehicle_catalog.gd / vehicle_meshes.gd   (auto, furgoni, camion, bus, cabrio)
+│   ├── high_beam_visuals.gd Bagliori e coni additivi degli abbaglianti (nessuna luce dinamica)
+│   ├── indicator_visuals.gd Frecce gialle lampeggianti per i cambi di corsia
+│   ├── ambient_traffic.gd   Traffico scenografico sulla carreggiata opposta
+│   ├── sign_gantry.gd       Portali con cartelli verdi svizzeri
+│   ├── overpass.gd          Cavalcavia
+│   ├── tunnel.gd / tunnel_meshes.gd          Gallerie a doppia canna (buio, soffitto, ventilatori)
+│   ├── road_works.gd / road_works_meshes.gd  Cantieri con corsia chiusa e macchinari
+│   ├── pickup.gd            Briciole (ricarica cacca)
+│   ├── road_scroller.gd / road_meshes.gd     Strada a segmenti riciclati
+│   ├── structure_meshes.gd
+│   └── scenery_factory.gd   Cielo, sole, nebbia, montagne
+├── Audio/game_audio.gd      Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
+├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume
 └── UI/                      HUD, controlli touch, schermate
 ```
+
+Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
 
 ### Scelte chiave
 
@@ -91,7 +101,8 @@ Scripts/
 - **Strutture lunghe** (gallerie, cantieri): nel calcolo del varco conta l'intervallo [fronte, coda], non un singolo istante. Un mezzo non viene generato nella corsia chiusa se raggiungerebbe il cantiere prima di uscire dalla visuale.
 - **Niente scatti alla prima comparsa:** tutti i mesh procedurali (gallerie, cantieri, veicoli…) vengono costruiti durante il menu, uno per frame, e disegnati una volta in miniatura dietro al pannello del titolo, così geometria e shader sono già pronti quando parte la partita. In più l'export Android ha lo **Shader Baker** attivo.
 - **Audio sintetizzato:** tutti gli effetti (`Audio/sfx/*.wav`, 44.1 kHz mono) sono generati da `Tools/synth_sfx.py` (numpy/scipy), niente asset esterni. I passaggi dei mezzi hanno il Doppler già nel file, quindi il Doppler di Godot è spento; i loop (strada, vento, galleria) sono senza cucitura e vengono messi in loop a runtime.
-- **Ordine di update esplicito** in `Main.TickPlaying`: niente dipendenze dall'ordine dei `_Process`.
+- **Mesh veloci anche in GDScript:** `LowPolyBuilder` tiene in cache le forme unitarie già espanse in triangoli con la normale di faccia, e le trasforma con `Transform3D * PackedVector3Array` (codice nativo, nessun ciclo per vertice). I 60 mesh del gioco si costruiscono in circa 30 ms.
+- **Ordine di update esplicito** in `main.gd` (`_tick_playing`): niente dipendenze dall'ordine dei `_process`.
 
 ## Struttura di gioco e monetizzazione
 
@@ -225,7 +236,7 @@ I periodi scaduti si cancellano con un job notturno. Se un giorno i numeri lo ri
 ### Server: repository e pipeline
 
 **Repository separato** (es. `game-services`), non dentro il progetto Godot, per tre motivi:
-- Godot compila **tutti** i `.cs` sotto la cartella del progetto, quindi il codice del server finirebbe nell'assembly del gioco (e nell'APK).
+- Il server è C#/.NET, il gioco GDScript: progetti e strumenti diversi.
 - Il server è condiviso da tutti i giochi: non appartiene a Pigeon Rush.
 - Versioni e rilasci sono indipendenti: si aggiorna il server senza ripubblicare il gioco, e viceversa.
 
@@ -238,7 +249,7 @@ game-services/
 └── .github/workflows/deploy.yml
 ```
 
-Nel gioco va solo il client: `Scripts/Online/GameServicesClient.cs`, con i DTO copiati dall'API. Sono pochi e l'API è versionata (`/v1`).
+Nel gioco va solo il client: `Scripts/Online/game_services_client.gd` (con `HTTPRequest`), con le strutture dei messaggi riprese dall'API. Sono poche e l'API è versionata (`/v1`).
 
 **Hosting: nuova VPS Infomaniak dedicata ai giochi (1 vCPU / 2 GB) con Docker Compose.** Docker aggiunge un livello, ma porta vantaggi concreti:
 - ogni servizio è isolato e descritto in un file;
@@ -307,7 +318,7 @@ Il server ha un utente `deploy` con chiave SSH dedicata (salvata nei secret di G
 
 ## Roadmap
 
-**Fase 1 (fatta):** volo, effetti sonori, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
+**Fase 1 (fatta):** porting a GDScript, volo, effetti sonori, traffico (auto, furgoni, camion, bus, cabrio, auto lavate), abbaglianti di avviso, cambi di corsia con freccia, traffico sulla carreggiata opposta, portali, cavalcavia, gallerie, cantieri con corsia chiusa, cacca con mirino, boost, combo, passaggi a filo, volo radente, briciole, morte al primo colpo, HUD, touch, pausa, game over, record.
 
 L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della monetizzazione e si prova su PC con una pubblicità finta. Le tratte vengono prima del meteo perché il meteo cambia all'uscita delle gallerie e per tratta. Il server arriva dopo le tratte, perché la classifica mostra anche fin dove si è arrivati, e prima delle pubblicità vere, perché il dominio ospita l'informativa privacy. L'economia viene prima delle pubblicità vere, che altrimenti non avrebbero niente da raddoppiare.
 
@@ -356,11 +367,11 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] *Da decidere:* secondo Continua con le briciole
 
 ### Fase 7: pubblicità vere (Android)
-- [ ] Scelta del plugin AdMob e ponte GDScript → C# (`AdMobAdService`)
+- [ ] Scelta del plugin AdMob e `AdMobAdService` in GDScript (i plugin espongono API GDScript: nessun ponte)
 - [ ] Consenso UMP al primo avvio
 - [ ] ID di prova, poi ID reali; caricamento anticipato; gestione degli errori senza bloccare il gioco
 - [ ] Test sul S24 e su un telefono di fascia bassa
-- **Rischio:** export C# Android ancora sperimentale + plugin Java (vale anche per Play Giochi). Fare un prototipo presto, anche in parallelo con la Fase 3.
+- **Da provare presto:** i plugin Java su Android (vale anche per Play Giochi), anche in parallelo con la Fase 3.
 
 ### Fase 8: acquisti in-app
 - [ ] Plugin Google Play Billing
@@ -424,4 +435,4 @@ Note di design:
 | Pulsanti, pausa | `ui_click` | bus UI, funziona anche in pausa |
 | Loop | `road_loop`, `wind_loop`, `tunnel_loop` | volume (e tono del vento) in base a velocità, boost e buio della galleria |
 
-I volumi si ritoccano in `GameAudio.cs` (`BaseDb` per effetto, `WorldBusDb`/`AmbienceBusDb`/`UiBusDb` per bus) e in `Main.UpdateAmbience` per i loop. Per rigenerare i suoni: `python Tools/synth_sfx.py Audio/sfx`.
+I volumi si ritoccano in `game_audio.gd` (`BASE_DB` per effetto, `WORLD_BUS_DB`/`AMBIENCE_BUS_DB`/`UI_BUS_DB` per bus) e in `main.gd` (`_update_ambience`) per i loop. Per rigenerare i suoni: `python Tools/synth_sfx.py Audio/sfx`.
