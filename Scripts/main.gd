@@ -84,11 +84,17 @@ var _shots_taken: Dictionary[String, bool] = {}
 # classifica mondiale: id della partita appena inviata (per la riga del game over)
 var _online_run_id: String = ""
 
+var _hints: TutorialHints
+## Tasto indietro sul titolo: un secondo tocco entro EXIT_CONFIRM_TIME chiude il gioco.
+var _exit_armed_until: float = 0.0
+const EXIT_CONFIRM_TIME := 2.0
+
 
 func _ready() -> void:
 	Actions.ensure_registered()
 	_save = SaveData.load_or_default()
 	AudioServer.set_bus_volume_linear(0, _save.sfx_volume)
+	_hints = TutorialHints.new(_save, TouchControls.is_touch_device())
 	Ads.ensure(get_tree())
 	# mai nelle build di release: la prova automatica ignora gli impatti
 	_smoke_test = OS.is_debug_build() and OS.get_cmdline_user_args().has("--smoke-test")
@@ -175,6 +181,11 @@ func _ready() -> void:
 	_screens.resume_pressed.connect(_resume)
 	_screens.restart_pressed.connect(_restart)
 	_screens.retry_pressed.connect(_on_retry_pressed)
+	_screens.menu_pressed.connect(_on_menu_pressed)
+	_screens.settings_pressed.connect(func() -> void: _screens.open_settings(_save.sfx_volume, _save.vibration))
+	_screens.settings.changed.connect(_on_settings_changed)
+	_screens.settings.tips_reset.connect(func() -> void: _hints.reset())
+	_screens.settings.closed.connect(_save_settings)
 	_screens.continue_accepted.connect(_on_continue_accepted)
 	_screens.continue_declined.connect(_on_continue_declined)
 	_traffic.pigeon_hit.connect(_on_pigeon_hit)
@@ -261,6 +272,54 @@ func _notification(what: int) -> void:
 	# su mobile: app in background = pausa automatica
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		_pause()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_on_back_requested()
+
+
+## Tasto indietro di Android (quit_on_go_back è spento): ogni stato fa la cosa più naturale.
+func _on_back_requested() -> void:
+	if _screens.close_panel():
+		return
+	match _state:
+		GameState.TITLE:
+			var now := Time.get_ticks_msec() / 1000.0
+			if now < _exit_armed_until:
+				get_tree().quit()
+			else:
+				_exit_armed_until = now + EXIT_CONFIRM_TIME
+				_screens.show_toast("Press back again to exit", EXIT_CONFIRM_TIME)
+		GameState.COUNTDOWN, GameState.PLAYING:
+			_pause()
+		GameState.PAUSED:
+			_resume()
+		GameState.CONTINUE_OFFER:
+			_on_continue_declined()
+		GameState.GAME_OVER:
+			_on_menu_pressed()
+		_:
+			pass # CRASHED: si aspetta il pannello "Continue?" o il game over
+
+
+func _on_settings_changed(volume: float, vibration: bool) -> void:
+	AudioServer.set_bus_volume_linear(0, volume)
+	var vibration_turned_on := vibration and not _save.vibration
+	_save.sfx_volume = volume
+	_save.vibration = vibration
+	if vibration_turned_on:
+		Input.vibrate_handheld(80) # conferma che funziona
+	_audio.play_ui(Sfx.UI_CLICK)
+
+
+func _save_settings() -> void:
+	if not _smoke_test:
+		_save.save()
+
+
+## Suggerimento delle prime partite, se non è ancora stato mostrato (vedi TutorialHints).
+func _hint(id: String) -> void:
+	if _hints.is_seen(id):
+		return
+	_hud.show_hint(_hints.take(id))
 
 
 func _tick_playing(dt: float) -> void:
@@ -276,6 +335,10 @@ func _tick_playing(dt: float) -> void:
 	_flap_cooldown = maxf(0.0, _flap_cooldown - dt)
 
 	_session.tick(dt)
+	if _session.ammo < TutorialHints.CRUMBS_BELOW:
+		_hint(TutorialHints.CRUMBS)
+	if _session.elapsed > TutorialHints.LOW_FLY_AFTER:
+		_hint(TutorialHints.LOW_FLY)
 	var speed := _session.speed
 	if speed.time_scale < 1.0:
 		speed.time_scale += dt * GameConfig.RESUME_RAMP # ripartenza dolce dopo il countdown
@@ -394,6 +457,7 @@ func _tick_wreck(dt: float) -> void:
 	var traffic_step := speed.approach_speed * dt
 
 	_road.advance(ground_step)
+	_session.route.shift(ground_step) # cartello della tratta e confini scorrono con la strada
 	_traffic.tick(dt, ground_step, traffic_step, _session)
 	_ambient.tick(dt, speed.pigeon_speed)
 	_poop.tick(dt, ground_step, traffic_step, _traffic.vehicles)
@@ -451,6 +515,8 @@ func _play_lock_sound() -> void:
 	if locked != null and locked != _last_lock and _lock_sound_cooldown <= 0.0:
 		_audio.play(Sfx.LOCK_ON)
 		_lock_sound_cooldown = 0.25
+		if _session.ammo > 0:
+			_hint(TutorialHints.DROP)
 	_last_lock = locked
 
 
@@ -515,6 +581,7 @@ func _on_poop_road_hit(p_position: Vector3) -> void:
 func _on_vehicle_hit(vehicle: Vehicle, p_position: Vector3) -> void:
 	var points := _session.score.register_hit(vehicle.spec.points)
 	_session.speed.add_boost(vehicle.spec.boost)
+	_hint(TutorialHints.BOOST)
 
 	_texts.spawn("+%d" % points, Palette.GOLD, p_position + Vector3(0.0, 1.0, 0.0), 1.2)
 	if not vehicle.spec.hit_label.is_empty():
@@ -536,6 +603,7 @@ func _on_vehicle_hit(vehicle: Vehicle, p_position: Vector3) -> void:
 func _on_near_miss(p_position: Vector3) -> void:
 	var points := _session.score.register_near_miss()
 	_audio.play(Sfx.NEAR_MISS)
+	_hint(TutorialHints.NEAR_MISS)
 	_texts.spawn("Close call! +%d" % points, Palette.INFO, p_position + Vector3(0.0, 0.9, -2.5), 0.7)
 
 
@@ -646,6 +714,7 @@ func _begin_play() -> void:
 		var route := _session.route
 		var title := "DAILY CHALLENGE" if _session.setup.is_daily() else route.segment.region.to_upper()
 		_hud.show_route_banner(title, route.segment.name, 0, 0.7)
+		_hint(TutorialHints.FLY)
 	# riparte alla velocità del countdown e accelera fino a quella piena (vedi RESUME_RAMP)
 	var speed := _session.speed
 	speed.time_scale = _countdown_world_speed / maxf(1.0, speed.base_speed * speed.multiplier)
@@ -739,6 +808,7 @@ func _revive() -> void:
 func _finish_run() -> void:
 	_state = GameState.GAME_OVER
 	_touch.enabled = false
+	_hud.clear_hints()
 	var score := _session.score
 	var setup := _session.setup
 	var new_record: bool
@@ -781,6 +851,12 @@ func _on_online_run_result(client_run_id: String, result: Dictionary) -> void:
 		_screens.set_online_result("Not on the world board: the run started offline")
 		return
 	var rank := _result_int(result, "rank")
+	# primo al mondo con questa partita: lo si festeggia
+	if rank == 1 and result.get("personalBest", false) == true:
+		var text := "#1 IN TODAY'S CHALLENGE!" if _session.setup.is_daily() else "NEW WORLD RECORD!"
+		_screens.set_online_result(text, Palette.GOLD)
+		_audio.play_ui(Sfx.COMBO, 0.0, 1.3)
+		return
 	if _session.setup.is_daily():
 		_screens.set_online_result("TODAY'S CHALLENGE: #%s IN THE WORLD" % UiFormat.number(rank), Palette.GOLD)
 	else:
@@ -804,14 +880,35 @@ static func _result_int(d: Dictionary, key: String) -> int:
 func _on_retry_pressed() -> void:
 	if _state != GameState.GAME_OVER:
 		return
+	_after_interstitial(_restart)
+
+
+## "MAIN MENU" dalla pausa (partita abbandonata, non inviata) o "MENU" dal game over
+## (stesse regole della pubblicità di "Try again", così non diventa un modo per evitarla).
+func _on_menu_pressed() -> void:
+	match _state:
+		GameState.PAUSED:
+			_back_to_title()
+		GameState.GAME_OVER:
+			_after_interstitial(_back_to_title)
+
+
+func _back_to_title() -> void:
+	get_tree().paused = false
+	_skip_title_on_load = false
+	_next_setup = null
+	get_tree().reload_current_scene()
+
+
+func _after_interstitial(next: Callable) -> void:
 	_screens.hide_all()
 	var now := InterstitialPolicy.now_seconds()
 	var ads := Ads.service
 	if ads != null and ads.is_inside_tree() and Ads.policy.should_show_interstitial(now):
 		Ads.policy.on_interstitial_shown(now)
-		ads.show_interstitial(_restart)
+		ads.show_interstitial(next)
 	else:
-		_restart()
+		next.call()
 
 
 # ------------------------------------------------------------------ prova automatica
@@ -891,14 +988,23 @@ func _smoke_self_checks() -> void:
 	data.runs_played = 42
 	data.sfx_volume = 0.5
 	data.vibration = false
+	data.hints_seen = PackedStringArray([TutorialHints.FLY, TutorialHints.DROP])
 	var parsed: Variant = JSON.parse_string(JSON.stringify(data.to_dict()))
 	if not parsed is Dictionary:
 		_smoke_errors.append("salvataggio: JSON non valido")
 		return
 	var copy := SaveData.from_dict(parsed as Dictionary)
 	if copy.best_score != 12345 or copy.best_distance != 6789 or copy.runs_played != 42 \
-			or not is_equal_approx(copy.sfx_volume, 0.5) or copy.vibration:
+			or not is_equal_approx(copy.sfx_volume, 0.5) or copy.vibration \
+			or copy.hints_seen != PackedStringArray([TutorialHints.FLY, TutorialHints.DROP]):
 		_smoke_errors.append("salvataggio: dati diversi dopo l'andata e ritorno")
+	# suggerimenti: uno solo per tipo, poi più niente; reset li rimette tutti
+	var hints := TutorialHints.new(SaveData.new(), true)
+	if hints.take(TutorialHints.BOOST).is_empty() or not hints.take(TutorialHints.BOOST).is_empty():
+		_smoke_errors.append("suggerimenti: il secondo dello stesso tipo non deve comparire")
+	hints.reset()
+	if hints.is_seen(TutorialHints.BOOST):
+		_smoke_errors.append("suggerimenti: reset non li azzera")
 	if SaveData.from_dict({ "best_score": "x", "settings": 3 }).best_score != 0:
 		_smoke_errors.append("salvataggio: valori non validi accettati")
 	var v1 := SaveData.from_dict({ "version": 1, "best_score": 900 })

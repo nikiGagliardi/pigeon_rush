@@ -38,6 +38,18 @@ var segment: RouteSegment:
 		return RouteData.get_segment(segment_index)
 
 
+## Metri in cui il mondo è scorso senza che il piccione volasse (rallentatore dopo l'impatto):
+## contano per il percorso, così cartelli e confini restano allineati alla strada, non per i punti.
+var _world_offset: float = 0.0
+
+
+## Il mondo scorre di metres senza punti né distanza (impatto, offerta del Continua).
+## Il cambio di tratta, se capita, arriva al prossimo update.
+func shift(metres: float) -> void:
+	_world_offset += metres
+	_distance += metres
+
+
 ## 0..1 dentro la tratta attuale.
 var progress: float:
 	get:
@@ -67,7 +79,7 @@ var conditions: TrackConditions:
 
 ## Avanza con i metri percorsi dalla partenza; emette segment_entered per ogni tratta nuova.
 func update(distance: float) -> void:
-	_distance = distance
+	_distance = distance + _world_offset
 	while _distance - _segment_start_distance >= segment.length:
 		_segment_start_distance += segment.length
 		segments_completed += 1

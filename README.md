@@ -43,6 +43,7 @@ Opzioni (dopo `--`):
 | Volare | WASD / frecce | Stick sinistro / D-pad | Joystick flottante (metà sinistra) |
 | Sganciare | Spazio / J | A / grilletto destro | Tocco sulla metà destra |
 | Pausa | Esc / P | Start | Pulsante "II" |
+| Indietro (Android) | — | — | Tasto indietro: in volo mette in pausa, in pausa riprende, chiude classifica e impostazioni, nel game over torna al menu, nel titolo chiede un secondo tocco per uscire |
 
 ## Regole
 
@@ -70,6 +71,9 @@ Opzioni (dopo `--`):
 - **Sfida giornaliera:** dal titolo, "DAILY CHALLENGE". Ogni giorno (UTC) ha un seed e una tratta di partenza uguali per tutti, quindi lo stesso percorso e lo stesso meteo. Il record del giorno è separato da quello normale.
 - **Meteo e ora del giorno:** ogni tratta ha il suo meteo (sole, nuvoloso, nebbia, pioggia, neve, tra quelli possibili per quella tratta) e la sua ora (giorno 60%, tramonto 20%, notte 20%), estratti dal seed. La prima tratta della partita è sempre di giorno. Il cambio avviene all'ingresso della tratta: graduale in 5 s all'aperto, in 1 s se si è in galleria.
 - **Bonus di visibilità:** i punti distanza si moltiplicano per notte ×1.3, nebbia ×1.2, neve ×1.15, pioggia ×1.1 (cumulabili: notte con nebbia ×1.56). Il bonus attivo è scritto in oro sotto la barra della tratta.
+- **Suggerimenti delle prime partite:** compaiono sopra le munizioni nel momento in cui servono (comandi di volo, primo mirino, primo colpo, primo passaggio a filo, munizioni sotto 3, volo radente dopo 25 s), una volta sola ciascuno. "SHOW TIPS AGAIN" nelle impostazioni li fa ricomparire.
+- **Impostazioni** (dal titolo e dalla pausa): volume, vibrazione, suggerimenti, informativa privacy, versione del gioco.
+- **Classifica mondiale:** nel game over la posizione ("WORLD #1,234  •  THIS WEEK #56"); "NEW WORLD RECORD!" quando la partita porta in testa alla classifica di sempre, "#1 IN TODAY'S CHALLENGE!" in quella del giorno.
 - **Difficoltà:** cresce con i metri percorsi (al massimo dopo 4 km), non col tempo. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
 
 ## Architettura
@@ -87,7 +91,8 @@ Scripts/
 │   ├── cells.gd             Griglia 3 corsie × 3 fasce (bitmask) per il varco garantito
 │   ├── node_pool.gd         Pool generico di nodi
 │   ├── actions.gd           Input map registrata via codice
-│   └── save_data.gd         Salvataggio JSON con versione (record, partite giocate, impostazioni)
+│   ├── save_data.gd         Salvataggio JSON con versione (record, partite giocate, impostazioni, suggerimenti visti)
+│   └── tutorial_hints.gd    Suggerimenti delle prime partite, uno per tipo
 ├── Ads/
 │   ├── ad_service.gd        Contratto delle pubblicità (a premio e a schermo intero)
 │   ├── mock_ad_service.gd   Pubblicità finta da 2 s per PC e prove (si può saltare)
@@ -130,7 +135,8 @@ Scripts/
 ├── Audio/game_audio.gd      Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume, pioggia e neve attorno alla camera
-└── UI/                      HUD, controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown), classifica mondiale
+└── UI/                      HUD (con i suggerimenti), controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown),
+                             classifica mondiale, impostazioni
 ```
 
 Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
@@ -143,6 +149,7 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 - **Guida a destra:** i mezzi contromano (verso +Z) hanno lo spartitraffico alla loro sinistra, quindi la carreggiata opposta sta sul lato +X. Lì il traffico va nella stessa direzione del piccione: a inizio partita ti sorpassa, quando acceleri sei tu a superarlo.
 - **Strutture lunghe** (gallerie, cantieri): nel calcolo del varco conta l'intervallo [fronte, coda], non un singolo istante. Un mezzo non viene generato nella corsia chiusa se raggiungerebbe il cantiere prima di uscire dalla visuale.
 - **Niente scatti alla prima comparsa:** tutti i mesh procedurali (gallerie, cantieri, veicoli…) vengono costruiti durante il menu, uno per frame, e disegnati una volta in miniatura dietro al pannello del titolo, così geometria e shader sono già pronti quando parte la partita. In più l'export Android ha lo **Shader Baker** attivo.
+- **Icona disegnata in SVG:** i livelli sono in `Art/Icon` (sfondo, piccione, sagoma monocromatica, icona completa). `godot --headless --path . --script res://Tools/render_icons.gd` rigenera i PNG usati dall'export Android (icona adattiva 432 px, classica 192 px) e da Play Console (512 px).
 - **Audio sintetizzato:** tutti gli effetti (`Audio/sfx/*.wav`, 44.1 kHz mono) sono generati da `Tools/synth_sfx.py` (numpy/scipy), niente asset esterni. I passaggi dei mezzi hanno il Doppler già nel file, quindi il Doppler di Godot è spento; i loop (strada, vento, galleria) sono senza cucitura e vengono messi in loop a runtime.
 - **Mesh veloci anche in GDScript:** `LowPolyBuilder` tiene in cache le forme unitarie già espanse in triangoli con la normale di faccia, e le trasforma con `Transform3D * PackedVector3Array` (codice nativo, nessun ciclo per vertice). I 60 mesh del gioco si costruiscono in circa 30 ms.
 - **Ordine di update esplicito** in `main.gd` (`_tick_playing`): niente dipendenze dall'ordine dei `_process`.
@@ -466,7 +473,7 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [x] Nel gioco: account anonimo, ticket durante il countdown, invio della partita al game over con coda offline (`user://online.json`)
 - [x] Game over con posizione mondiale ("WORLD #1,234 • THIS WEEK #56", "TODAY'S CHALLENGE: #12") e schermata della classifica (sempre, settimana, sfida di oggi)
 - [x] Nome modificabile e cancellazione dei dati online dalla schermata della classifica
-- [ ] "NEW WORLD RECORD!" quando si è primi
+- [x] "NEW WORLD RECORD!" quando si è primi
 - [ ] Filtro delle parolacce sui nomi
 - [ ] Plugin Play Games Services v2 per Godot: accesso automatico e collegamento dell'account
 
@@ -494,9 +501,9 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] *Eventuale:* pacchetti di briciole d'oro, verificati dal server con la Play Developer API, consumati dopo l'accredito, con storno dei rimborsi (Voided Purchases API)
 
 ### Fase 9: pubblicazione su Google Play
-- [x] Account Play Console creato (in verifica)
+- [x] Account Play Console creato e verificato, primo AAB nel test interno
 - [ ] Test chiuso con 12 tester per 14 giorni, da avviare subito (vedi sopra)
-- [ ] Firma dell'app, AAB, livello API richiesto
+- [x] Firma dell'app (chiave di upload + Play App Signing), AAB con build Gradle, API 36, pacchetto `ch.moesagames.pigeonrush`
 - [ ] Play Integrity su invio delle partite e acquisti (gioco + verifica sul server)
 - [ ] Modulo "Sicurezza dei dati" (pubblicità + server), link alla cancellazione account, questionario IARC (13+)
 - [ ] Scheda dello store: icona, screenshot, video breve

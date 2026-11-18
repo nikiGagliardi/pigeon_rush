@@ -40,6 +40,13 @@ var _last_segment: int = -1
 var _last_lap: int = -1
 
 const BANNER_TIME := 2.8
+## Suggerimenti delle prime partite (TutorialHints): quanto restano a schermo.
+const HINT_TIME := 4.0
+
+var _hint: PanelContainer
+var _hint_label: Label
+var _hint_time: float = 0.0
+var _hint_queue: PackedStringArray = PackedStringArray()
 
 
 func _ready() -> void:
@@ -130,6 +137,7 @@ func _ready() -> void:
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	bottom.add_theme_constant_override("separation", 6)
+	bottom.add_child(_build_hint())
 	_lock = UiStyle.make_label("TARGET LOCKED! Drop now", 30, Palette.RETICLE, HORIZONTAL_ALIGNMENT_CENTER)
 	_low_fly = UiStyle.make_label("LOW FLYING  x1.5", 22, Palette.INFO, HORIZONTAL_ALIGNMENT_CENTER)
 	bottom.add_child(_lock)
@@ -205,6 +213,59 @@ func refresh(dt: float, session: GameSession, locked: bool, low_flying: bool) ->
 
 	_refresh_route(session.route)
 	_tick_banner(dt)
+	_tick_hint(dt)
+
+
+## Suggerimento sopra le munizioni; se ce n'è già uno, arriva dopo.
+func show_hint(text: String) -> void:
+	if text.is_empty():
+		return
+	if _hint_time > 0.0:
+		if not _hint_queue.has(text):
+			_hint_queue.append(text)
+		return
+	_hint_label.text = text
+	_hint_time = HINT_TIME
+	_hint.visible = true
+	_hint.modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+
+func clear_hints() -> void:
+	_hint_queue.clear()
+	_hint_time = 0.0
+	_hint.visible = false
+
+
+func _tick_hint(dt: float) -> void:
+	if _hint_time <= 0.0:
+		return
+	_hint_time = maxf(0.0, _hint_time - dt)
+	var shown := HINT_TIME - _hint_time
+	_hint.modulate = Color(1.0, 1.0, 1.0, minf(shown / 0.25, 1.0) * minf(_hint_time / 0.4, 1.0))
+	if _hint_time <= 0.0:
+		_hint.visible = false
+		if not _hint_queue.is_empty():
+			var next := _hint_queue[0]
+			_hint_queue.remove_at(0)
+			show_hint(next)
+
+
+func _build_hint() -> Control:
+	_hint = PanelContainer.new()
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := UiStyle.flat(Color(0.05, 0.07, 0.12, 0.78), 14, 14.0)
+	style.border_color = Palette.GOLD
+	style.set_border_width_all(2)
+	_hint.add_theme_stylebox_override("panel", style)
+	_hint_label = UiStyle.make_label("", 26, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint_label.custom_minimum_size = Vector2(620.0, 0.0)
+	_hint.add_child(_hint_label)
+	_hint.visible = false
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(_hint)
+	return center
 
 
 func _refresh_route(route: RouteTracker) -> void:

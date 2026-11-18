@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 432 432">
+<g transform="translate(216 222) scale(0.86) translate(-216 -232)">
+  <!-- ali spiegate -->
+  <polygon points="190,238 96,150 74,170 92,190 70,206 104,226 86,246 140,256 196,268" fill="#ffffff"/>
+  <polygon points="96,150 74,170 92,190 70,206 104,226 86,246 110,246 120,222 104,204 118,186 104,168" fill="#ffffff"/>
+  <polygon points="242,238 336,150 358,170 340,190 362,206 328,226 346,246 292,256 236,268" fill="#ffffff"/>
+  <polygon points="336,150 358,170 340,190 362,206 328,226 346,246 322,246 312,222 328,204 314,186 328,168" fill="#ffffff"/>
+  <!-- corpo -->
+  <ellipse cx="216" cy="258" rx="54" ry="64" fill="#ffffff"/>
+  <ellipse cx="216" cy="278" rx="36" ry="40" fill="#ffffff"/>
+  <!-- zampe -->
+  <polygon points="200,316 207,316 202,338 192,340" fill="#ffffff"/>
+  <polygon points="225,316 232,316 240,340 230,338" fill="#ffffff"/>
+  <!-- collo iridescente -->
+  <ellipse cx="216" cy="206" rx="44" ry="24" fill="#ffffff"/>
+  <ellipse cx="216" cy="214" rx="40" ry="16" fill="#ffffff"/>
+  <!-- testa -->
+  <circle cx="216" cy="172" r="42" fill="#ffffff"/>
+  <!-- occhi -->
+  <circle cx="198" cy="166" r="13" fill="#ffffff"/>
+  <circle cx="234" cy="166" r="13" fill="#ffffff"/>
+  <circle cx="200" cy="167" r="9" fill="#ffffff"/>
+  <circle cx="232" cy="167" r="9" fill="#ffffff"/>
+  <circle cx="201" cy="168" r="4.5" fill="#ffffff"/>
+  <circle cx="231" cy="168" r="4.5" fill="#ffffff"/>
+  <circle cx="203" cy="165" r="1.8" fill="#ffffff"/>
+  <circle cx="233" cy="165" r="1.8" fill="#ffffff"/>
+  <!-- sopracciglia birichine -->
+  <polygon points="184,150 212,156 211,160 184,155" fill="#ffffff"/>
+  <polygon points="248,150 220,156 221,160 248,155" fill="#ffffff"/>
+  <!-- becco -->
+  <ellipse cx="216" cy="184" rx="9" ry="4" fill="#ffffff"/>
+  <polygon points="205,187 227,187 216,207" fill="#ffffff"/>
+</g>
+</svg>

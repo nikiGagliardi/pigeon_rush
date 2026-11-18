@@ -9,6 +9,13 @@ signal resume_pressed
 signal restart_pressed
 ## "Try again" dal game over (partita conclusa: qui può arrivare la pubblicità a schermo intero).
 signal retry_pressed
+## Torna al titolo: dalla pausa (partita abbandonata) o dal game over.
+signal menu_pressed
+## "SETTINGS" dal titolo o dalla pausa: Main apre il pannello con i valori salvati (open_settings).
+signal settings_pressed
+
+## Impostazioni: Main ascolta changed / tips_reset / closed.
+var settings: SettingsPanel
 signal continue_accepted
 signal continue_declined
 
@@ -35,6 +42,13 @@ var _over_world: Label
 var _countdown_tween: Tween
 var _leaderboard: LeaderboardPanel
 var _leaderboard_button: Button
+var _settings_button: Button
+var _pause_settings_button: Button
+## Schermata da cui si sono aperte le impostazioni (titolo o pausa), a cui si torna.
+var _settings_return: Control
+var _toast: PanelContainer
+var _toast_label: Label
+var _toast_tween: Tween
 
 
 func _ready() -> void:
@@ -50,6 +64,10 @@ func _ready() -> void:
 	_leaderboard = LeaderboardPanel.new()
 	add_child(_leaderboard)
 	_leaderboard.closed.connect(_on_leaderboard_closed)
+	settings = SettingsPanel.new()
+	add_child(settings)
+	settings.closed.connect(_on_settings_closed)
+	_build_toast()
 	hide_all()
 
 
@@ -71,6 +89,46 @@ func show_leaderboard() -> void:
 func _on_leaderboard_closed() -> void:
 	_title.visible = true
 	_leaderboard_button.grab_focus()
+
+
+## Apre le impostazioni sopra la schermata attuale (titolo o pausa), che torna visibile alla chiusura.
+func open_settings(volume: float, vibration: bool) -> void:
+	_settings_return = _pause if _pause.visible else _title
+	_title.visible = false
+	_pause.visible = false
+	settings.open(volume, vibration)
+
+
+func _on_settings_closed() -> void:
+	if _settings_return == null:
+		return
+	_settings_return.visible = true
+	(_pause_settings_button if _settings_return == _pause else _settings_button).grab_focus()
+	_settings_return = null
+
+
+## Tasto indietro di Android: chiude classifica o impostazioni. false = nessun pannello da chiudere.
+func close_panel() -> bool:
+	if settings.visible:
+		settings.close()
+		return true
+	if _leaderboard.visible:
+		_leaderboard.close()
+		return true
+	return false
+
+
+## Messaggio breve in basso ("Press back again to exit"), sopra a tutto.
+func show_toast(text: String, seconds: float = 2.0) -> void:
+	if _toast_tween != null:
+		_toast_tween.kill()
+	_toast_label.text = text
+	_toast.visible = true
+	_toast.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	_toast_tween = create_tween()
+	_toast_tween.tween_interval(seconds)
+	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.3)
+	_toast_tween.tween_callback(func() -> void: _toast.visible = false)
 
 
 func show_pause() -> void:
@@ -153,6 +211,9 @@ func hide_all() -> void:
 	_game_over.visible = false
 	if _leaderboard != null:
 		_leaderboard.visible = false
+	if settings != null:
+		settings.visible = false
+	_settings_return = null
 	show_countdown("")
 	var viewport := get_viewport()
 	if viewport != null:
@@ -187,14 +248,18 @@ func _build_title() -> void:
 	row.add_theme_constant_override("separation", 16)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(row)
-	_daily_button = UiStyle.make_button("DAILY CHALLENGE", 28)
-	_daily_button.custom_minimum_size = Vector2(340.0, 64.0)
+	_daily_button = UiStyle.make_button("DAILY CHALLENGE", 26)
+	_daily_button.custom_minimum_size = Vector2(320.0, 64.0)
 	_daily_button.pressed.connect(func() -> void: daily_pressed.emit())
 	row.add_child(_daily_button)
-	_leaderboard_button = UiStyle.make_button("LEADERBOARD", 28)
-	_leaderboard_button.custom_minimum_size = Vector2(300.0, 64.0)
+	_leaderboard_button = UiStyle.make_button("LEADERBOARD", 26)
+	_leaderboard_button.custom_minimum_size = Vector2(270.0, 64.0)
 	_leaderboard_button.pressed.connect(show_leaderboard)
 	row.add_child(_leaderboard_button)
+	_settings_button = UiStyle.make_button("SETTINGS", 26)
+	_settings_button.custom_minimum_size = Vector2(220.0, 64.0)
+	_settings_button.pressed.connect(func() -> void: settings_pressed.emit())
+	row.add_child(_settings_button)
 	_title_daily = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_daily)
 	box.add_child(_spacer(6.0))
@@ -220,6 +285,14 @@ func _build_pause() -> void:
 	restart.pressed.connect(func() -> void: restart_pressed.emit())
 	box.add_child(_centered(restart))
 
+	_pause_settings_button = UiStyle.make_button("SETTINGS")
+	_pause_settings_button.pressed.connect(func() -> void: settings_pressed.emit())
+	box.add_child(_centered(_pause_settings_button))
+
+	var menu := UiStyle.make_button("MAIN MENU")
+	menu.pressed.connect(func() -> void: menu_pressed.emit())
+	box.add_child(_centered(menu))
+
 
 func _build_game_over() -> void:
 	var box := VBoxContainer.new()
@@ -238,9 +311,19 @@ func _build_game_over() -> void:
 	box.add_child(_over_stats)
 	box.add_child(_spacer(8.0))
 
+	# affiancati: il pannello del game over è già alto
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", 16)
+	actions.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(actions)
 	_retry_button = UiStyle.make_button("TRY AGAIN")
 	_retry_button.pressed.connect(func() -> void: retry_pressed.emit())
-	box.add_child(_centered(_retry_button))
+	actions.add_child(_retry_button)
+	var menu := UiStyle.make_button("MENU")
+	menu.custom_minimum_size = Vector2(220.0, 84.0)
+	menu.pressed.connect(func() -> void: menu_pressed.emit())
+	actions.add_child(menu)
 
 
 func _build_continue() -> void:
@@ -275,6 +358,19 @@ func _build_countdown() -> void:
 
 
 ## Sfondo scuro + pannello centrato che contiene box.
+func _build_toast() -> void:
+	_toast = PanelContainer.new()
+	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_toast.add_theme_stylebox_override("panel", UiStyle.flat(Color(0.0, 0.0, 0.0, 0.75), 14, 12.0))
+	_toast_label = UiStyle.make_label("", 24, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_toast.add_child(_toast_label)
+	add_child(_toast)
+	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 40)
+	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_toast.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_toast.visible = false
+
+
 func _make_overlay(dim: float, box: VBoxContainer) -> Control:
 	var root := Control.new()
 	root.mouse_filter = Control.MOUSE_FILTER_STOP

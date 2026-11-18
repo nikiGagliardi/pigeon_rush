@@ -22,3 +22,6 @@ export/
 # Log di debug
 hitch_log*.txt
 *.log
+
+# Template di build Android (Project → Install Android Build Template): si rigenera
+android/

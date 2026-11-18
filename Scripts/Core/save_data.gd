@@ -21,6 +21,9 @@ var daily_best: int = 0
 var sfx_volume: float = 1.0
 var vibration: bool = true
 
+# suggerimenti delle prime partite già mostrati (vedi TutorialHints)
+var hints_seen: PackedStringArray = PackedStringArray()
+
 
 static func load_or_default() -> SaveData:
 	if FileAccess.file_exists(FILE_PATH):
@@ -92,6 +95,9 @@ func to_dict() -> Dictionary:
 			"sfx_volume": sfx_volume,
 			"vibration": vibration,
 		},
+		"tutorial": {
+			"seen": Array(hints_seen),
+		},
 	}
 
 
@@ -114,6 +120,15 @@ static func from_dict(d: Dictionary) -> SaveData:
 		var settings := raw_settings as Dictionary
 		data.sfx_volume = clampf(_float(settings, "sfx_volume", 1.0), 0.0, 1.0)
 		data.vibration = _bool(settings, "vibration", true)
+
+	# "tutorial" manca nei salvataggi più vecchi: tutti i suggerimenti ancora da mostrare
+	var raw_tutorial: Variant = d.get("tutorial", {})
+	if raw_tutorial is Dictionary:
+		var seen: Variant = (raw_tutorial as Dictionary).get("seen", [])
+		if seen is Array:
+			for id: Variant in seen as Array:
+				if id is String and not data.hints_seen.has(id as String):
+					data.hints_seen.append(id as String)
 	return data
 
 
