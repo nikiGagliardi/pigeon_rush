@@ -81,6 +81,9 @@ var _shot_key: String = ""
 var _shot_key_time: float = 0.0
 var _shots_taken: Dictionary[String, bool] = {}
 
+# classifica mondiale: id della partita appena inviata (per la riga del game over)
+var _online_run_id: String = ""
+
 
 func _ready() -> void:
 	Actions.ensure_registered()
@@ -101,6 +104,9 @@ func _ready() -> void:
 	if _smoke_test and not _smoke_checked:
 		_smoke_checked = true
 		_smoke_self_checks()
+	var online := GameServicesClient.ensure(get_tree(), _smoke_test)
+	online.run_result.connect(_on_online_run_result)
+	online.queue_stalled.connect(_on_online_stalled)
 
 	var world_environment := SceneryFactory.create_environment()
 	_environment = world_environment.environment
@@ -575,6 +581,7 @@ func _start_game(setup: RunSetup) -> void:
 	_hud.set_best(_save.daily_best_for(setup.daily_date) if setup.is_daily() else _save.best_score)
 
 	Ads.policy.on_run_started()
+	GameServicesClient.instance.begin_run(setup) # il ticket arriva durante il countdown, senza bloccare
 	_hud.visible = true
 	_start_countdown(TITLE_WORLD_SPEED)
 
@@ -747,9 +754,50 @@ func _finish_run() -> void:
 	Ads.policy.on_run_finished()
 	_hud.set_best(best)
 	_screens.show_game_over(_session, best, new_record)
+	_submit_online()
 	_audio.play_ui(Sfx.GAME_OVER)
 	if _smoke_test:
 		_smoke_finish_run()
+
+
+## Invio alla classifica mondiale: la risposta arriva in _on_online_run_result (o mai, senza rete).
+func _submit_online() -> void:
+	var client := GameServicesClient.instance
+	if client == null or not client.enabled:
+		return
+	_online_run_id = client.new_run_id()
+	client.finish_run(_online_run_id, _session, _continues_used)
+	_screens.set_online_result("Sending to the world leaderboard…")
+
+
+func _on_online_run_result(client_run_id: String, result: Dictionary) -> void:
+	if client_run_id != _online_run_id or _state != GameState.GAME_OVER:
+		return
+	_online_run_id = ""
+	if result.is_empty():
+		_screens.set_online_result("")
+		return
+	if result.get("ranked", false) != true:
+		_screens.set_online_result("Not on the world board: the run started offline")
+		return
+	var rank := _result_int(result, "rank")
+	if _session.setup.is_daily():
+		_screens.set_online_result("TODAY'S CHALLENGE: #%s IN THE WORLD" % UiFormat.number(rank), Palette.GOLD)
+	else:
+		_screens.set_online_result("WORLD #%s  •  THIS WEEK #%s" % [
+			UiFormat.number(rank), UiFormat.number(_result_int(result, "weekRank"))], Palette.GOLD)
+
+
+func _on_online_stalled() -> void:
+	if not _online_run_id.is_empty() and _state == GameState.GAME_OVER:
+		_screens.set_online_result("Offline: your score will be sent later")
+
+
+static func _result_int(d: Dictionary, key: String) -> int:
+	var value: Variant = d.get(key, 0)
+	if value is float:
+		return int(value as float)
+	return value as int if value is int else 0
 
 
 ## "Try again": qui, ogni tanto, la pubblicità a schermo intero (vedi InterstitialPolicy).
@@ -811,6 +859,13 @@ func _smoke_finish_run() -> void:
 		else:
 			_on_retry_pressed.call_deferred()
 		return
+	# con --api=... (server finto) le due partite devono avere ticket e risposta
+	var online := GameServicesClient.instance
+	if online != null and online.enabled:
+		await online.wait_idle(10.0)
+		print("[Smoke] online: %d ticket, %d partite accettate, giocatore %s" % [online.tickets_received, online.runs_accepted, online.full_name()])
+		if online.tickets_received < 2 or online.runs_accepted < 2:
+			_smoke_errors.append("online: %d ticket e %d partite accettate invece di 2" % [online.tickets_received, online.runs_accepted])
 	if _smoke_errors.is_empty():
 		print("[Smoke] OK")
 		get_tree().quit()

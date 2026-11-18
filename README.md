@@ -32,6 +32,7 @@ Opzioni (dopo `--`):
 - `--survive=20`: impatti ignorati solo per i primi 20 s, per partite più brevi;
 - `--no-ads`: simula la mancanza di pubblicità, quindi niente pannello "Continue?" (funziona anche giocando normalmente).
 - `--time=night` e/o `--weather=fog`: forzano ora (`day`, `sunset`, `night`) e meteo (`sun`, `cloudy`, `fog`, `rain`, `snow`) di tutte le tratte, anche giocando normalmente.
+- `--api=http://127.0.0.1:8099`: usa un server di prova invece di `api.moesagames.ch` (solo build di debug, anche giocando normalmente). Nella prova automatica il client online è spento se manca `--api`, così non tocca mai il server vero; con `--api` controlla anche che entrambe le partite ricevano ticket e risposta. Usa `user://online_smoke.json`, non l'account vero.
 
 **Provare meteo e ora mentre si gioca** (solo build di debug, cioè da editor): **F7** cambia l'ora del giorno, **F8** il meteo, **F9** torna a quelli del seed. Funziona anche nel menu e resta valido dopo "Try again". Il bonus di punti segue quello forzato.
 
@@ -92,6 +93,9 @@ Scripts/
 │   ├── mock_ad_service.gd   Pubblicità finta da 2 s per PC e prove (si può saltare)
 │   ├── interstitial_policy.gd  Quando mostrare quella a schermo intero
 │   └── ads.gd               Accesso statico: il servizio vive fuori dalla scena e sopravvive a "Try again"
+├── Online/
+│   └── game_services_client.gd  Server dei giochi: account anonimo, ticket di partita, invio con coda offline,
+│                                classifiche, nome, cancellazione (vive fuori dalla scena, come Ads)
 ├── Route/
 │   ├── route_segment.gd     Una tratta: nome, cantone, lunghezza, profilo di traffico e strutture, gallerie, meteo possibili
 │   ├── route_data.gd        Le 9 tratte dell'anello
@@ -126,7 +130,7 @@ Scripts/
 ├── Audio/game_audio.gd      Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume, pioggia e neve attorno alla camera
-└── UI/                      HUD, controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown)
+└── UI/                      HUD, controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown), classifica mondiale
 ```
 
 Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
@@ -278,21 +282,23 @@ Effetto collaterale utile: con l'account collegato a Play Giochi il saldo e le s
 | Contro | Se l'app viene disinstallata l'account si perde | Non tutti usano Play Giochi; su iOS serve Game Center a parte |
 
 **Flusso:**
-1. Primo avvio: il gioco crea l'account anonimo. Il nome di default è quello di Play Giochi, oppure `Pigeon1234`, e si può cambiare nelle impostazioni.
+1. Primo avvio: il gioco crea l'account anonimo. Il nome di default è casuale (`SwiftPigeon#0042`; con Play Giochi diventerà quello del profilo) e si cambia dalla schermata della classifica.
 2. Se Play Giochi è attivo, il gioco chiede un codice monouso (`requestServerSideAccess`) e lo invia al server. Il server lo scambia con Google, verifica l'ID del giocatore con le API di Play Games e lo **collega** all'account. Con un telefono nuovo, lo stesso ID ritrova il vecchio account.
-3. Nome visibile in classifica: filtro delle parolacce e un suffisso `#1234` se il nome è già usato.
+3. Nome visibile in classifica: sempre con il suffisso `#1234`, così due giocatori possono chiamarsi uguale. Il filtro delle parolacce è ancora da fare (per ora si interviene a mano).
 
 **Server (stesso stack degli altri progetti):** ASP.NET Core (.NET 10) minimal API + **PostgreSQL** + Dapper, con HTTPS, sul server Infomaniak. È unico per tutti i giochi: ogni gioco ha il suo identificativo.
 
 | Endpoint | Cosa fa |
 |---|---|
-| `POST /v1/players` | Crea l'account anonimo e restituisce ID e token |
-| `POST /v1/players/me/google` | Collega Play Giochi (codice monouso) |
-| `PATCH /v1/players/me` | Cambia il nome |
-| `POST /v1/games/{game}/runs` | Invia una partita (modalità normale/giornaliera, seed, punti, distanza, durata, colpi, tratta di partenza, tratta e giro raggiunti, continue usati, versione) e restituisce posizione, record personale e record mondiale |
-| `GET /v1/games/{game}/leaderboards/{all\|week\|day}` | Classifica: primi 100 + "intorno a me" |
-| `GET /v1/games/{game}/daily` | Sfida del giorno: data, seed e tratta di partenza (oggi il gioco li calcola da solo dalla data) e classifica del giorno |
-| `DELETE /v1/players/me` | Cancella account e dati (richiesto da Google Play) |
+| `POST /v1/players` | Crea l'account anonimo e restituisce ID, token e nome |
+| `GET` / `PATCH /v1/players/me` | Profilo / cambio del nome |
+| `DELETE /v1/players/me` | Cancella account, partite e record (richiesto da Google Play) |
+| `POST /v1/games/{game}/runs/start` | Ticket di inizio partita (modalità, seed, data della giornaliera, versione), chiesto durante il countdown |
+| `POST /v1/games/{game}/runs` | Invia una partita (ticket, punti, distanza, durata, colpi, combo, continue, giro, tratte, versione) e restituisce posizione mondiale, della settimana o del giorno e record personale |
+| `GET /v1/games/{game}/leaderboards/{all\|week\|daily}` | Classifica: primi 50 (fino a 100) + la propria posizione |
+| `POST /v1/players/me/google` | *Da fare:* collega Play Giochi (codice monouso) |
+
+Protocollo completo in `game-services/docs/api.md`. Il seed della sfida giornaliera lo calcola il gioco dalla data; il server verifica che sia quello giusto (`PigeonRushRules.DailySeed`).
 
 Tabelle: `games`, `players`, `player_identities` (provider + ID esterno), `runs`, `best_scores` (migliore per gioco, giocatore e periodo).
 
@@ -393,11 +399,12 @@ Il server ha un utente `deploy` con chiave SSH dedicata (salvata nei secret di G
 *In seguito, per il gioco:* una seconda pipeline che esporta l'AAB Android con Godot in modalità headless e lo carica nel test interno di Play Console.
 
 **Dettagli importanti:**
-- **Mai bloccare il gioco:** l'invio parte al game over con un timeout di circa 3 s, mostrando "Saving…". Senza rete la partita va in una coda locale e viene reinviata al prossimo avvio. "Try again" funziona sempre.
+- **Mai bloccare il gioco:** il ticket si chiede durante il countdown (timeout 4 s), l'invio parte al game over mostrando "Sending to the world leaderboard…" e poi la posizione. Senza rete la partita resta nella coda locale (`user://online.json`, massimo 20) e riparte al prossimo avvio, alla fine della partita successiva o aprendo la classifica; il game over dice "Offline: your score will be sent later". Senza ticket la partita conta solo per il record personale. "Try again" funziona sempre.
 - **Anti-trucchi:**
-  - controlli di plausibilità sul server: punti compatibili con distanza e colpi, distanza compatibile con la durata e la velocità massima, punti al secondo entro un limite;
+  - ticket di partita: la durata dichiarata non può superare il tempo passato sull'orologio del server;
+  - controlli di plausibilità sul server: punti compatibili con distanza, colpi e passaggi a filo (`PigeonRushRules`, da aggiornare se cambia il calcolo dei punti), distanza compatibile con la durata e la velocità massima, versione minima;
   - limite di richieste;
-  - le partite sospette vengono segnalate, non mostrate;
+  - le partite sospette vengono salvate ma non entrano in classifica, e la risposta sembra normale (shadow ban);
   - le briciole d'oro hanno il saldo sul server, con le verifiche descritte sopra (`game-services/docs/difesa-briciole.md`).
   - Un segreto nel client non basta, perché si estrae dall'APK. In seguito si può aggiungere la **Play Integrity API**.
 - **Privacy:** nome, punteggi e ID sono dati personali. Servono quindi informativa privacy, modulo "Sicurezza dei dati" e **cancellazione account sia nel gioco sia da una pagina web**, entrambe ospitate sul dominio del server.
@@ -453,12 +460,15 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] Monitoraggio: hub Beszel sulla VPS esistente, agent sul server dei giochi, avvisi su CPU, RAM, disco, server giù e `/health`
 - [ ] Repository `game-services` separato: API ASP.NET Core + PostgreSQL + Dapper (giocatori, collegamento a Play Giochi, partite, classifiche sempre/settimana/giorno), migrazioni DbUp, test con Testcontainers
 - [ ] Pipeline GitHub Actions: build, test, immagine Docker, trasferimento via SSH, migrazioni, `docker compose up`, controllo `/health` con ripristino automatico
-- [ ] Controlli di plausibilità e limite di richieste
-- [ ] Pagine web: informativa privacy e cancellazione account
-- [ ] Nel gioco: account anonimo, nome modificabile, invio della partita al game over con coda offline
-- [ ] Game over con posizione mondiale e "NEW WORLD RECORD!", schermata della classifica
+- [x] API `/v1`: giocatori anonimi con token, ticket `runs/start`, invio delle partite, classifiche sempre/settimana/giorno, cancellazione (migrazione `0002`, test xUnit + Testcontainers)
+- [x] Controlli di plausibilità (ticket con l'orologio del server, velocità, durata, modello del punteggio di Pigeon Rush), shadow ban, ban e `--rebuild-leaderboards`, limite di richieste
+- [x] Pagine web: informativa privacy (`/privacy`) e cancellazione account (`/delete-account`)
+- [x] Nel gioco: account anonimo, ticket durante il countdown, invio della partita al game over con coda offline (`user://online.json`)
+- [x] Game over con posizione mondiale ("WORLD #1,234 • THIS WEEK #56", "TODAY'S CHALLENGE: #12") e schermata della classifica (sempre, settimana, sfida di oggi)
+- [x] Nome modificabile e cancellazione dei dati online dalla schermata della classifica
+- [ ] "NEW WORLD RECORD!" quando si è primi
+- [ ] Filtro delle parolacce sui nomi
 - [ ] Plugin Play Games Services v2 per Godot: accesso automatico e collegamento dell'account
-- [ ] Cancellazione account dalle impostazioni del gioco
 
 ### Fase 6: economia e progressione
 - [ ] Server: migrazione `0003_wallet` (saldo, registro dei movimenti, skin possedute) e servizio del portafoglio atomico e idempotente

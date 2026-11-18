@@ -31,7 +31,10 @@ var _continue_ring: CountdownRing
 var _over_score: Label
 var _over_stats: Label
 var _over_record: Label
+var _over_world: Label
 var _countdown_tween: Tween
+var _leaderboard: LeaderboardPanel
+var _leaderboard_button: Button
 
 
 func _ready() -> void:
@@ -44,6 +47,9 @@ func _ready() -> void:
 	_build_continue()
 	_build_game_over()
 	_build_countdown()
+	_leaderboard = LeaderboardPanel.new()
+	add_child(_leaderboard)
+	_leaderboard.closed.connect(_on_leaderboard_closed)
 	hide_all()
 
 
@@ -54,6 +60,17 @@ func show_title(best: int, daily_info: String) -> void:
 	_title_daily.text = daily_info
 	_title.visible = true
 	_play_button.grab_focus()
+
+
+## Dal titolo: classifica mondiale a tutto schermo; "BACK" riporta al titolo.
+func show_leaderboard() -> void:
+	_title.visible = false
+	_leaderboard.open()
+
+
+func _on_leaderboard_closed() -> void:
+	_title.visible = true
+	_leaderboard_button.grab_focus()
 
 
 func show_pause() -> void:
@@ -79,8 +96,16 @@ func show_game_over(session: GameSession, best: int, new_record: bool) -> void:
 	else:
 		_over_record.text = "NEW BEST!" if new_record else "Best: %s" % UiFormat.number(best)
 	_over_record.add_theme_color_override("font_color", Palette.GOLD if new_record else Color(1.0, 1.0, 1.0, 0.8))
+	set_online_result("")
 	_game_over.visible = true
 	_retry_button.grab_focus()
+
+
+## Riga della classifica mondiale nel game over ("WORLD #1,234  •  THIS WEEK #56"). Vuota = nascosta.
+func set_online_result(text: String, color: Color = Color(1.0, 1.0, 1.0, 0.75)) -> void:
+	_over_world.text = text
+	_over_world.visible = not text.is_empty()
+	_over_world.add_theme_color_override("font_color", color)
 
 
 func show_continue(score: int) -> void:
@@ -126,6 +151,8 @@ func hide_all() -> void:
 	_pause.visible = false
 	_continue.visible = false
 	_game_over.visible = false
+	if _leaderboard != null:
+		_leaderboard.visible = false
 	show_countdown("")
 	var viewport := get_viewport()
 	if viewport != null:
@@ -155,10 +182,19 @@ func _build_title() -> void:
 	_title_best = UiStyle.make_label("", 24, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_best)
 
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(row)
 	_daily_button = UiStyle.make_button("DAILY CHALLENGE", 28)
 	_daily_button.custom_minimum_size = Vector2(340.0, 64.0)
 	_daily_button.pressed.connect(func() -> void: daily_pressed.emit())
-	box.add_child(_centered(_daily_button))
+	row.add_child(_daily_button)
+	_leaderboard_button = UiStyle.make_button("LEADERBOARD", 28)
+	_leaderboard_button.custom_minimum_size = Vector2(300.0, 64.0)
+	_leaderboard_button.pressed.connect(show_leaderboard)
+	row.add_child(_leaderboard_button)
 	_title_daily = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_daily)
 	box.add_child(_spacer(6.0))
@@ -194,6 +230,8 @@ func _build_game_over() -> void:
 	box.add_child(_over_score)
 	_over_record = UiStyle.make_label("", 28, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_record)
+	_over_world = UiStyle.make_label("", 24, Color(1.0, 1.0, 1.0, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_over_world)
 	_over_route = UiStyle.make_label("", 26, Palette.INFO, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_over_route)
 	_over_stats = UiStyle.make_label("", 22, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
