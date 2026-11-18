@@ -1,31 +1,44 @@
 class_name Screens
 extends Control
-## Schermate a tutto schermo: titolo, pausa, game over. Gira anche col gioco in pausa.
+## Schermate a tutto schermo: titolo, pausa, "Continue?", game over e countdown. Gira anche col gioco in pausa.
 
 signal start_pressed
 signal resume_pressed
+## Ricomincia dalla pausa (partita abbandonata).
 signal restart_pressed
+## "Try again" dal game over (partita conclusa: qui può arrivare la pubblicità a schermo intero).
+signal retry_pressed
+signal continue_accepted
+signal continue_declined
 
 var _title: Control
 var _pause: Control
+var _continue: Control
 var _game_over: Control
+var _countdown: Label
 var _play_button: Button
 var _resume_button: Button
+var _watch_button: Button
 var _retry_button: Button
 var _title_best: Label
+var _continue_score: Label
+var _continue_ring: CountdownRing
 var _over_score: Label
 var _over_stats: Label
 var _over_record: Label
+var _countdown_tween: Tween
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	_build_title()
 	_build_pause()
+	_build_continue()
 	_build_game_over()
+	_build_countdown()
 	hide_all()
 
 
@@ -55,10 +68,50 @@ func show_game_over(session: GameSession, best: int, new_record: bool) -> void:
 	_retry_button.grab_focus()
 
 
+func show_continue(score: int) -> void:
+	hide_all()
+	_continue_score.text = "%s points so far" % UiFormat.number(score)
+	set_continue_progress(1.0, ceili(GameConfig.CONTINUE_OFFER_TIME))
+	_watch_button.disabled = false
+	_continue.visible = true
+	_watch_button.grab_focus()
+
+
+## left01: tempo rimasto (1 → 0); seconds: numero al centro dell'anello.
+func set_continue_progress(left01: float, seconds: int) -> void:
+	_continue_ring.progress = left01
+	_continue_ring.label = str(seconds)
+
+
+## Mentre gira la pubblicità il pannello resta sotto, ma non si può premere due volte.
+func set_continue_waiting(waiting: bool) -> void:
+	_watch_button.disabled = waiting
+	if not waiting and _continue.visible:
+		_watch_button.grab_focus()
+
+
+## Numero del countdown con un piccolo "pop". Testo vuoto = nasconde.
+func show_countdown(text: String) -> void:
+	if _countdown_tween != null:
+		_countdown_tween.kill()
+	_countdown.text = text
+	_countdown.visible = not text.is_empty()
+	if text.is_empty():
+		return
+	_countdown.pivot_offset = _countdown.size * 0.5
+	_countdown.scale = Vector2.ONE * 1.6
+	_countdown.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	_countdown_tween = create_tween()
+	_countdown_tween.tween_property(_countdown, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_countdown_tween.tween_property(_countdown, "modulate:a", 0.0, 0.5).set_delay(0.25)
+
+
 func hide_all() -> void:
 	_title.visible = false
 	_pause.visible = false
+	_continue.visible = false
 	_game_over.visible = false
+	show_countdown("")
 	var viewport := get_viewport()
 	if viewport != null:
 		viewport.gui_release_focus()
@@ -68,6 +121,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _pause.visible and event.is_action_pressed(Actions.PAUSE):
 		get_viewport().set_input_as_handled()
 		resume_pressed.emit()
+	elif _continue.visible and not _watch_button.disabled and event.is_action_pressed(Actions.PAUSE):
+		get_viewport().set_input_as_handled()
+		continue_declined.emit()
 
 
 func _build_title() -> void:
@@ -120,8 +176,39 @@ func _build_game_over() -> void:
 	box.add_child(_spacer(8.0))
 
 	_retry_button = UiStyle.make_button("TRY AGAIN")
-	_retry_button.pressed.connect(func() -> void: restart_pressed.emit())
+	_retry_button.pressed.connect(func() -> void: retry_pressed.emit())
 	box.add_child(_centered(_retry_button))
+
+
+func _build_continue() -> void:
+	var box := VBoxContainer.new()
+	_continue = _make_overlay(0.45, box)
+	box.add_child(UiStyle.make_label("CONTINUE?", 64, UiStyle.ACCENT, HORIZONTAL_ALIGNMENT_CENTER))
+	_continue_score = UiStyle.make_label("", 26, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_continue_score)
+
+	_continue_ring = CountdownRing.new()
+	_continue_ring.custom_minimum_size = Vector2(150.0, 150.0)
+	box.add_child(_centered(_continue_ring))
+
+	_watch_button = UiStyle.make_button("WATCH AD & FLY ON")
+	_watch_button.pressed.connect(func() -> void: continue_accepted.emit())
+	box.add_child(_centered(_watch_button))
+
+	var decline := UiStyle.make_button("NO THANKS", 26)
+	decline.custom_minimum_size = Vector2(260.0, 64.0)
+	decline.pressed.connect(func() -> void:
+		if not _watch_button.disabled:
+			continue_declined.emit())
+	box.add_child(_centered(decline))
+	box.add_child(UiStyle.make_label("One continue per run", 18, Color(1.0, 1.0, 1.0, 0.6), HORIZONTAL_ALIGNMENT_CENTER))
+
+
+func _build_countdown() -> void:
+	_countdown = UiStyle.make_label("", 150, UiStyle.ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
+	_countdown.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	add_child(_countdown)
+	_countdown.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
 ## Sfondo scuro + pannello centrato che contiene box.
@@ -129,18 +216,18 @@ func _make_overlay(dim: float, box: VBoxContainer) -> Control:
 	var root := Control.new()
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(root)
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var shade := ColorRect.new()
 	shade.color = Color(0.0, 0.0, 0.0, dim)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(shade)
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var panel := UiStyle.make_panel()
 	center.add_child(panel)
@@ -163,3 +250,39 @@ static func _spacer(height: float) -> Control:
 	spacer.custom_minimum_size = Vector2(0.0, height)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return spacer
+
+
+## Anello che si svuota col tempo dell'offerta, con i secondi al centro.
+class CountdownRing extends Control:
+	const WIDTH := 12.0
+
+	var progress: float = 1.0:
+		set(value):
+			progress = clampf(value, 0.0, 1.0)
+			queue_redraw()
+
+	var label: String = "":
+		set(value):
+			if value == label:
+				return
+			label = value
+			queue_redraw()
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x, size.y) * 0.5 - WIDTH
+		draw_arc(center, radius, 0.0, TAU, 64, Color(1.0, 1.0, 1.0, 0.18), WIDTH, true)
+		if progress > 0.0:
+			var start := -PI * 0.5
+			# rosso negli ultimi istanti
+			var color := UiStyle.ACCENT if progress > 0.3 else Palette.DANGER
+			draw_arc(center, radius, start, start + TAU * progress, 64, color, WIDTH, true)
+		var font := get_theme_default_font()
+		var font_size := 64
+		var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
+		var baseline := center + Vector2(-text_size.x * 0.5, font.get_ascent(font_size) - text_size.y * 0.5)
+		draw_string_outline(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, 10, Color(0.0, 0.0, 0.0, 0.85))
+		draw_string(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)

@@ -14,13 +14,21 @@ Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia,
 
 **Tipi obbligatori:** nelle impostazioni del progetto una variabile o un parametro senza tipo è un errore (`untyped_declaration`), e gli accessi non sicuri sono segnalati come avviso.
 
-**Prova automatica**, senza interfaccia: due partite da circa 150 s simulati ciascuna, con volo pseudo-casuale, impatti ignorati per passare da gallerie e cantieri e un ricaricamento di scena. Termina con `[Smoke] OK` se non ci sono errori:
+**Prova automatica**, senza interfaccia. Fa due partite da circa 150 s simulati ciascuna:
+- volo pseudo-casuale, con gli impatti ignorati per passare da gallerie e cantieri;
+- in ogni partita un Continua con la pubblicità finta, poi la fine e "Try again", che ricarica la scena;
+- prima di partire, controlla le regole della pubblicità a schermo intero e il salvataggio JSON.
+
+Termina con `[Smoke] OK` se non ci sono errori, altrimenti stampa gli errori ed esce con codice 1. Non tocca il record salvato.
 
 ```
 godot --headless --path . --fixed-fps 60 -- --smoke-test
 ```
 
-Con un driver video (non `--headless`) l'opzione `--shots` salva una schermata ogni 6 s in `user://`.
+Opzioni (dopo `--`):
+- `--shots`, con un driver video (non `--headless`): salva in `user://` una schermata ogni 6 s e una per ogni stato (countdown, impatto, "Continue?", pubblicità, game over);
+- `--survive=20`: impatti ignorati solo per i primi 20 s, per partite più brevi;
+- `--no-ads`: simula la mancanza di pubblicità, quindi niente pannello "Continue?" (funziona anche giocando normalmente).
 
 ## Comandi
 
@@ -37,7 +45,15 @@ Con un driver video (non `--headless`) l'opzione `--shots` salva una schermata o
 - **Combo:** colpi consecutivi entro 3.5 s moltiplicano i punti (fino a x5). Anche un passaggio a filo tiene viva la combo.
 - **Punti distanza:** metri × moltiplicatore di velocità × **1.5 se voli radente** (sotto i 2 m).
 - **Passaggio a filo:** sfiorare un ostacolo a meno di 0.9 m senza toccarlo vale 50 × combo.
-- **Un colpo e sei fuori:** al primo impatto con un mezzo o un ostacolo il piccione è spacciato. Niente vite, niente invulnerabilità.
+- **Countdown:** ogni partita parte con 3-2-1-GO. Durante il countdown il piccione si può già spostare, ma non sgancia e non fa punti.
+- **Un colpo e sei fuori:** al primo impatto con un mezzo o un ostacolo il piccione è spacciato. Niente vite.
+- **Continua (1 per partita):** dopo l'impatto compare "Continue?" con un anello di 5 s. Guardando la pubblicità a premio si riparte con lo stesso punteggio e la stessa distanza:
+  - spariscono mezzi e strutture nei 70 m davanti (le gallerie restano, si vola sotto il soffitto);
+  - nuovo countdown col mondo fermo, poi ripartenza dolce;
+  - 2.5 s di invulnerabilità, con il piccione che lampeggia.
+
+  Se la pubblicità viene saltata non c'è premio e l'offerta riprende. "No thanks", Esc o la fine dell'anello portano al game over.
+- **Pubblicità a schermo intero:** può arrivare premendo "Try again", mai nelle prime 3 partite della sessione, al massimo una ogni 3 partite, almeno 90 s dopo qualsiasi altra pubblicità e mai dopo una partita in cui si è guardata quella a premio.
 - **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3. Il contatore sta in basso al centro (icone + `6/10`, rosso lampeggiante quando è vuoto) e, su touch, anche sul pulsante DROP.
 - **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. Lampeggia solo il primo mezzo della corsia: quelli dietro non ti vedono.
 - **Cambi di corsia:** ogni tanto un mezzo mette la freccia (1.5 s) e si sposta nella corsia accanto. È raro (ogni 10-19 s all'inizio, 6-11 s a difficoltà massima) e leale: parte solo da mezzi a 3.5-5.5 s dal piccione, solo se nella corsia di destinazione c'è spazio, mai verso una corsia chiusa da un cantiere e mai se chiuderebbe il varco minimo garantito.
@@ -51,7 +67,7 @@ Tutta la scena viene costruita **da codice** (`Scenes/Main.tscn` contiene solo i
 
 ```
 Scripts/
-├── main.gd                  Regista: costruzione scena, stato di gioco, ordine di update, prova automatica
+├── main.gd                  Regista: costruzione scena, stati di gioco (countdown, Continua), ordine di update, prova automatica
 ├── Core/
 │   ├── game_config.gd       Tutte le costanti di bilanciamento
 │   ├── game_session.gd      Stato partita (munizioni, tempo, difficoltà, game over)
@@ -60,7 +76,12 @@ Scripts/
 │   ├── cells.gd             Griglia 3 corsie × 3 fasce (bitmask) per il varco garantito
 │   ├── node_pool.gd         Pool generico di nodi
 │   ├── actions.gd           Input map registrata via codice
-│   └── save_data.gd         Record in user://
+│   └── save_data.gd         Salvataggio JSON con versione (record, partite giocate, impostazioni)
+├── Ads/
+│   ├── ad_service.gd        Contratto delle pubblicità (a premio e a schermo intero)
+│   ├── mock_ad_service.gd   Pubblicità finta da 2 s per PC e prove (si può saltare)
+│   ├── interstitial_policy.gd  Quando mostrare quella a schermo intero
+│   └── ads.gd               Accesso statico: il servizio vive fuori dalla scena e sopravvive a "Try again"
 ├── Rendering/
 │   ├── low_poly_builder.gd  Primitive → ArrayMesh flat-shaded con vertex color
 │   ├── asset_warmup.gd      Pre-costruzione mesh e pre-compilazione shader durante il menu
@@ -87,7 +108,7 @@ Scripts/
 ├── Audio/game_audio.gd      Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume
-└── UI/                      HUD, controlli touch, schermate
+└── UI/                      HUD, controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown)
 ```
 
 Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
@@ -148,15 +169,15 @@ Il volo è un viaggio a tratte reali: **Chiasso → Lugano → Bellinzona → Go
 Le frequenze sono valori di partenza, da calibrare con i dati reali.
 
 **Flusso del Continua:**
-1. Schianto e rallentatore, poi il pannello con l'anello di 5 s e i pulsanti "▶ Watch ad" / "No thanks".
-2. Durante la pubblicità il gioco è in pausa e l'audio fermo.
+1. Schianto e rallentatore fino a fermarsi, poi il pannello con l'anello di 5 s e i pulsanti "Watch ad & fly on" / "No thanks".
+2. Durante la pubblicità l'anello si ferma e l'audio del gioco è spento.
 3. Se la pubblicità viene vista fino in fondo:
-   - spariscono gli ostacoli nei 60-80 m davanti al piccione;
+   - spariscono mezzi e strutture nei 70 m davanti al piccione (le gallerie restano);
+   - parte il countdown 3-2-1 col mondo fermo, poi il mondo riaccelera in circa 0.8 s;
    - il piccione è invulnerabile per 2.5 s e lampeggia;
-   - parte il countdown 3-2-1;
-   - punteggio, distanza, combo, tratta e meteo restano quelli di prima.
-4. Se la pubblicità viene chiusa prima o non è disponibile, si va al game over.
-5. La pubblicità a premio si **carica in anticipo durante il volo**, non dopo la morte.
+   - punteggio, distanza, velocità di base, tratta e meteo restano quelli di prima (boost e combo si perdono con l'impatto).
+4. Se la pubblicità viene saltata non c'è premio e l'offerta riprende col tempo rimasto. Se la pubblicità non è disponibile il pannello non compare e si va dritti al game over.
+5. La pubblicità a premio si **carica in anticipo durante il volo**, non dopo la morte (con quella vera, Fase 7).
 
 ### Briciole d'oro e un eventuale secondo Continua
 
@@ -325,12 +346,12 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 **Subito, in parallelo:** appena l'account Play Console è verificato, caricare la build attuale nel test interno e poi avviare il test chiuso con 12 tester, per far partire i 14 giorni.
 
 ### Fase 2: ciclo di partita e Continua (pubblicità finta)
-- [ ] Countdown 3-2-1 a inizio partita (suoni già pronti), riusato dopo il Continua
-- [ ] `IAdService` + `MockAdService` (pubblicità simulata di 2 s, successo o annullamento)
-- [ ] Stato `ContinueOffer`: pannello "Continue?", anello di 5 s, pulsanti
-- [ ] Ripresa: pulizia degli ostacoli davanti, invulnerabilità con lampeggio, punteggio conservato, 1 per partita
-- [ ] Regole della pubblicità a schermo intero (contatore partite e intervallo minimo) con la versione finta
-- [ ] Salvataggio in JSON con versione (record, partite giocate, impostazioni) al posto del solo record
+- [x] Countdown 3-2-1 a inizio partita (suoni già pronti), riusato dopo il Continua
+- [x] `AdService` + `MockAdService` (pubblicità simulata di 2 s, successo o annullamento)
+- [x] Stato `CONTINUE_OFFER`: pannello "Continue?", anello di 5 s, pulsanti
+- [x] Ripresa: pulizia degli ostacoli davanti, invulnerabilità con lampeggio, punteggio conservato, 1 per partita
+- [x] Regole della pubblicità a schermo intero (contatore partite e intervallo minimo) con la versione finta
+- [x] Salvataggio in JSON con versione (record, partite giocate, impostazioni) al posto del solo record
 
 ### Fase 3: tratte della A2
 - [ ] Definizione dati delle tratte (nome, cantone, lunghezza, meteo possibili)
@@ -431,6 +452,8 @@ Note di design:
 | Inizio salita | `flap` | |
 | Freccia di un mezzo | `indicator_tick` / `indicator_tock` | 3D, si sente da lontano: avvisa del cambio corsia |
 | Macchina operatrice nei cantieri | `works_beep` in loop | 3D, sulla prima macchina |
+| Countdown 3-2-1, GO | `countdown_beep`, `countdown_go` | bus UI |
+| Secondi dell'anello "Continue?" | `ui_click` più acuto | |
 | Schianto, schermata di game over | `crash`, `game_over` | |
 | Pulsanti, pausa | `ui_click` | bus UI, funziona anche in pausa |
 | Loop | `road_loop`, `wind_loop`, `tunnel_loop` | volume (e tono del vento) in base a velocità, boost e buio della galleria |

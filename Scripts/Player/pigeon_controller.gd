@@ -87,6 +87,20 @@ func tick_crash(dt: float) -> void:
 	_update_shadow()
 
 
+## Ripresa dopo il Continua: di nuovo in volo alla quota di partenza, stessa X.
+func revive() -> void:
+	velocity = Vector3.ZERO
+	position = Vector3(clampf(position.x, -GameConfig.FLY_HALF_WIDTH, GameConfig.FLY_HALF_WIDTH), GameConfig.PIGEON_START_Y, 0.0)
+	_model.rotation = Vector3.ZERO
+	set_blink(false)
+	_update_shadow()
+
+
+## Lampeggio dell'invulnerabilità: nasconde il modello, l'ombra resta.
+func set_blink(hidden: bool) -> void:
+	_model.visible = not hidden
+
+
 func _update_shadow() -> void:
 	var height01 := clampf(position.y / GameConfig.FLY_MAX_Y, 0.0, 1.0)
 	var s := lerpf(1.1, 0.45, height01)

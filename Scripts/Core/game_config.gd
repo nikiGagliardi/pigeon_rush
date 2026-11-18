@@ -61,6 +61,18 @@ const LOW_FLY_BONUS := 1.5
 const DIFFICULTY_RAMP_TIME := 150.0
 const START_GRACE := 2.0
 
+# --- Ciclo di partita e Continua ---
+const COUNTDOWN_TIME := 3.0
+## Il mondo riparte dolcemente dopo il countdown (time_scale da 0 o dal menu fino a 1 in circa 0,8 s).
+const RESUME_RAMP := 1.25
+## Pausa dopo l'impatto prima del pannello "Continue?" o del game over.
+const CRASH_DELAY := 1.3
+const CONTINUE_OFFER_TIME := 5.0
+const CONTINUES_PER_RUN := 1
+## Alla ripresa spariscono traffico e strutture fino a questa distanza davanti al piccione.
+const REVIVE_CLEAR_DISTANCE := 70.0
+const REVIVE_INVULNERABILITY := 2.5
+
 
 static func lane_x(lane: int) -> float:
 	return (lane - (LANE_COUNT - 1) * 0.5) * LANE_WIDTH

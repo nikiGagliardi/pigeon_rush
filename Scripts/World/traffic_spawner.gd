@@ -95,18 +95,19 @@ func tick(dt: float, ground_step: float, traffic_step: float, session: GameSessi
 
 
 ## Collisioni, passaggi a filo e raccolta oggetti.
-func resolve_pigeon(pigeon: PigeonController, ground_step: float, traffic_step: float, approach_speed: float) -> void:
+## invulnerable: dopo il Continua gli ostacoli attraversano il piccione senza colpirlo (e senza passaggi a filo).
+func resolve_pigeon(pigeon: PigeonController, ground_step: float, traffic_step: float, approach_speed: float, invulnerable: bool = false) -> void:
 	var pigeon_box := pigeon.bounds()
 	var pigeon_z := pigeon.position.z
 
 	_flash_lead_vehicles(pigeon_box, pigeon_z)
 
 	for vehicle: Vehicle in vehicles:
-		_resolve_hazard(vehicle, pigeon, pigeon_box, pigeon_z, traffic_step)
+		_resolve_hazard(vehicle, pigeon, pigeon_box, pigeon_z, traffic_step, invulnerable)
 		_check_passby(vehicle, pigeon.position, approach_speed)
 
 	for structure: Hazard in _structures:
-		_resolve_hazard(structure, pigeon, pigeon_box, pigeon_z, ground_step)
+		_resolve_hazard(structure, pigeon, pigeon_box, pigeon_z, ground_step, invulnerable)
 
 	for i in range(_pickups.size() - 1, -1, -1):
 		var pickup := _pickups[i]
@@ -154,8 +155,14 @@ func _check_passby(vehicle: Vehicle, pigeon: Vector3, approach_speed: float) -> 
 		vehicle_passing.emit(vehicle)
 
 
-func _resolve_hazard(hazard: Hazard, pigeon: PigeonController, pigeon_box: AABB, pigeon_z: float, sweep: float) -> void:
+func _resolve_hazard(hazard: Hazard, pigeon: PigeonController, pigeon_box: AABB, pigeon_z: float, sweep: float, invulnerable: bool) -> void:
 	if hazard.passed_pigeon:
+		return
+
+	if invulnerable:
+		# chi supera il piccione mentre è invulnerabile non conta come passaggio a filo
+		if hazard.rear_z() > pigeon_z + GameConfig.PIGEON_HALF_EXTENTS.z:
+			hazard.passed_pigeon = true
 		return
 
 	var min_gap := INF
@@ -193,14 +200,7 @@ func _move_and_recycle(dt: float, ground_step: float, traffic_step: float) -> vo
 		structure.animate(dt)
 		if structure.rear_z() <= GameConfig.DESPAWN_Z:
 			continue
-		if structure is SignGantry:
-			_gantry_pool.release(structure)
-		elif structure is Overpass:
-			_overpass_pool.release(structure)
-		elif structure is Tunnel:
-			_tunnel_pool.release(structure)
-		elif structure is RoadWorks:
-			_works_pool.release(structure)
+		_release_structure(structure)
 		_remove_swap(_structures, i)
 
 	for i in range(_pickups.size() - 1, -1, -1):
@@ -209,6 +209,42 @@ func _move_and_recycle(dt: float, ground_step: float, traffic_step: float) -> vo
 		pickup.animate(dt)
 		if pickup.position.z > GameConfig.DESPAWN_Z:
 			_remove_pickup_at(i)
+
+
+func _release_structure(structure: Hazard) -> void:
+	if structure is SignGantry:
+		_gantry_pool.release(structure)
+	elif structure is Overpass:
+		_overpass_pool.release(structure)
+	elif structure is Tunnel:
+		_tunnel_pool.release(structure)
+	elif structure is RoadWorks:
+		_works_pool.release(structure)
+
+
+## Ripresa dopo il Continua: toglie mezzi e strutture tra il piccione e distance metri davanti,
+## compreso quello appena colpito. Le gallerie restano (il piccione può esserci dentro e si vola
+## sotto il soffitto): si azzera solo il contatto, così le ventole tornano pericolose.
+func clear_ahead(distance: float) -> void:
+	var behind := GameConfig.PIGEON_HALF_EXTENTS.z + 1.0
+	for i in range(vehicles.size() - 1, -1, -1):
+		var vehicle := vehicles[i]
+		if vehicle.front_z() > -distance and vehicle.rear_z() < behind:
+			_vehicle_pool.release(vehicle)
+			_remove_swap(vehicles, i)
+
+	for i in range(_structures.size() - 1, -1, -1):
+		var structure := _structures[i]
+		if structure.front_z() <= -distance or structure.rear_z() >= behind:
+			continue
+		if structure is Tunnel:
+			structure.touched_pigeon = false
+			continue
+		_release_structure(structure)
+		_remove_swap(_structures, i)
+
+	# la prossima fila riparte senza vincoli dalla precedente (che non c'è più)
+	_prev_free_mask = Cells.ALL
 
 
 ## Limiti laterali di volo alla coordinata Z (le reti dei cantieri restringono la strada): x = minimo, y = massimo.

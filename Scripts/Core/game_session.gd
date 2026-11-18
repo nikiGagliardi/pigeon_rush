@@ -34,3 +34,9 @@ func crash() -> void:
 	is_over = true
 	speed.clear_boost()
 	score.break_combo()
+
+
+## Dopo il Continua: punteggio, distanza e velocità di base restano quelli raggiunti.
+func revive() -> void:
+	is_over = false
+	speed.time_scale = 0.0 # riparte da fermo, poi accelera alla fine del countdown
