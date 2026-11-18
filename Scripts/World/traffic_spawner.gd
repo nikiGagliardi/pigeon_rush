@@ -56,6 +56,8 @@ var _sign_pool: NodePool
 var _signs: Array[RouteSign] = []
 var _sign_for_completed: int = -1 # tratte completate quando è stato messo l'ultimo cartello
 
+var _low_beams_on: bool = false
+
 ## Gallerie e cantieri non attraversano il confine di tratta: il cartello resterebbe nascosto nella montagna.
 const SIGN_CLEARANCE := 40.0
 
@@ -268,6 +270,17 @@ func _try_spawn_route_sign() -> void:
 	_signs.append(sign)
 
 
+## Anabbaglianti di tutti i mezzi (0..1), dall'atmosfera: notte, nebbia, pioggia e gallerie.
+func set_headlights(level: float) -> void:
+	HighBeamVisuals.set_low_beam_level(level)
+	var on := level > 0.05
+	if on == _low_beams_on:
+		return
+	_low_beams_on = on
+	for vehicle: Vehicle in vehicles:
+		vehicle.set_low_beams(on)
+
+
 ## Z del cartello di tratta più vicino al piccione (INF se non ce ne sono). Usato dalla prova automatica.
 func nearest_route_sign_z() -> float:
 	var best := INF
@@ -463,6 +476,7 @@ func _spawn_row(session: GameSession, overshoot: float) -> void:
 		var vehicle: Vehicle = _vehicle_pool.acquire()
 		var x := GameConfig.lane_x(lane) + _rng_rows.randf_range(-0.25, 0.25)
 		vehicle.activate(kinds[lane] as Kind, _rng_rows.randi_range(0, 15), lane, x, z + _rng_rows.randf_range(-2.5, 2.5))
+		vehicle.set_low_beams(_low_beams_on)
 		vehicles.append(vehicle)
 
 	_try_spawn_pickup(session, free_mask, z)

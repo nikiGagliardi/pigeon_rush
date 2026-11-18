@@ -1,6 +1,7 @@
 class_name GameAudio
 extends Node3D
-## Audio del gioco: pool di player 2D e 3D, tre loop d'ambiente (strada, vento, galleria) e i bus.
+## Audio del gioco: pool di player 2D e 3D, quattro loop d'ambiente (strada, vento, galleria, pioggia),
+## tuoni casuali col temporale e i bus.
 ## Bus: World (effetti di gioco, riverbero attivo in galleria), Ambience (loop), UI (menu).
 ## I player sono figli di questo nodo: con il gioco in pausa si fermano da soli, tranne quello della UI.
 ## L'ascoltatore è la camera corrente. I file sono in res://Audio/sfx, generati da Tools/synth_sfx.py.
@@ -10,6 +11,7 @@ enum Sfx {
 	HORN_CAR, HORN_CAR_DOUBLE, HORN_CAR_ANGRY, HORN_TRUCK, PASSBY_CAR, PASSBY_TRUCK,
 	FLAP, POOP_DROP, SPLAT, CRASH, PICKUP, COMBO, LOCK_ON, NEAR_MISS,
 	INDICATOR_TICK, INDICATOR_TOCK, WORKS_BEEP, COUNTDOWN_BEEP, COUNTDOWN_GO, UI_CLICK, GAME_OVER,
+	THUNDER,
 }
 
 const WORLD_BUS := &"World"
@@ -47,12 +49,14 @@ const BASE_DB: Array[float] = [
 	-2.0, # COUNTDOWN_GO
 	-6.0, # UI_CLICK
 	-2.0, # GAME_OVER
+	-3.0, # THUNDER
 ]
 
 const FILE_NAMES: Array[String] = [
 	"horn_car", "horn_car_double", "horn_car_angry", "horn_truck", "passby_car", "passby_truck",
 	"flap", "poop_drop", "splat", "crash", "pickup", "combo", "lock_on", "near_miss",
 	"indicator_tick", "indicator_tock", "works_beep", "countdown_beep", "countdown_go", "ui_click", "game_over",
+	"thunder",
 ]
 
 
@@ -88,6 +92,12 @@ var _next_3d: int = 0
 var _road: AudioStreamPlayer
 var _wind: AudioStreamPlayer
 var _tunnel: AudioStreamPlayer
+var _rain: AudioStreamPlayer
+var _rain_level: float = 0.0
+var _rain_target: float = 0.0
+var _thunder_timer: float = 8.0
+var _thunder_allowed: bool = false
+var _rng := RandomNumberGenerator.new()
 var _road_level: float = 0.0
 var _wind_level: float = 0.0
 var _tunnel_level: float = 0.0
@@ -136,6 +146,8 @@ func _ready() -> void:
 	_road = _create_loop("road_loop")
 	_wind = _create_loop("wind_loop")
 	_tunnel = _create_loop("tunnel_loop")
+	_rain = _create_loop("rain_loop")
+	_rng.randomize()
 
 
 func _process(delta: float) -> void:
@@ -250,6 +262,22 @@ func set_ambience(road: float, wind: float, wind_pitch: float, tunnel: float) ->
 	_set_reverb(tunnel > 0.3)
 
 
+## Pioggia (0..1): loop attutito in galleria, tuoni ogni 10-24 s solo all'aperto e durante il volo.
+func set_weather(rain: float, tunnel_darkness: float, flying: bool) -> void:
+	_rain_target = clampf(rain, 0.0, 1.0) * lerpf(0.8, 0.15, tunnel_darkness)
+	_thunder_allowed = rain > 0.5 and flying and tunnel_darkness < 0.5
+
+
+func _tick_thunder(dt: float) -> void:
+	if not _thunder_allowed:
+		return
+	_thunder_timer -= dt
+	if _thunder_timer > 0.0:
+		return
+	_thunder_timer = _rng.randf_range(10.0, 24.0)
+	play(Sfx.THUNDER, _rng.randf_range(-8.0, 0.0), _rng.randf_range(0.8, 1.1))
+
+
 func _tick_pending(dt: float) -> void:
 	for i in range(_pending.size() - 1, -1, -1):
 		var pending := _pending[i]
@@ -280,6 +308,9 @@ func _tick_ambience(dt: float) -> void:
 	_wind_level = move_toward(_wind_level, _wind_target, dt * 0.8)
 	_tunnel_level = move_toward(_tunnel_level, _tunnel_target, dt * 1.5)
 	_wind_pitch = move_toward(_wind_pitch, _wind_pitch_target, dt * 0.5)
+	_rain_level = move_toward(_rain_level, _rain_target, dt * 0.4)
+	_apply_loop(_rain, _rain_level, 1.0)
+	_tick_thunder(dt)
 	_apply_loop(_road, _road_level, 1.0)
 	_apply_loop(_wind, _wind_level, _wind_pitch)
 	_apply_loop(_tunnel, _tunnel_level, 1.0)

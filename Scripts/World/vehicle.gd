@@ -46,6 +46,8 @@ var _splat: MeshInstance3D
 var _high_beams: Node3D
 var _flares: Array[MeshInstance3D] = []
 var _beams: Array[MeshInstance3D] = []
+var _low_beams: Node3D
+var _low_parts: Array[MeshInstance3D] = [] # per lato: cono, bagliore
 var _indicators: Array[Node3D] = [] # 0 = sinistra (-X), 1 = destra (+X)
 var _indicator_parts: Array[MeshInstance3D] = [] # per freccia: anteriore, laterale, bagliore
 
@@ -74,6 +76,9 @@ func _init() -> void:
 	_high_beams = Node3D.new()
 	_high_beams.visible = false
 	add_child(_high_beams)
+	_low_beams = Node3D.new()
+	_low_beams.visible = false
+	add_child(_low_beams)
 	for i in 2:
 		var flare := MeshInstance3D.new()
 		flare.mesh = HighBeamVisuals.flare()
@@ -87,6 +92,15 @@ func _init() -> void:
 		_flares.append(flare)
 		_beams.append(beam)
 
+		var low_beam := MeshInstance3D.new()
+		low_beam.mesh = HighBeamVisuals.low_beam()
+		low_beam.rotation_degrees = Vector3(-90.0 + HighBeamVisuals.LOW_BEAM_PITCH, 0.0, 0.0)
+		low_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var low_flare := MeshInstance3D.new()
+		low_flare.mesh = HighBeamVisuals.low_flare()
+		low_flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_low_parts.append_array([low_beam, low_flare])
+
 		# freccia: lampadina sull'angolo anteriore + ripetitore laterale + bagliore
 		var indicator := Node3D.new()
 		indicator.visible = false
@@ -98,6 +112,8 @@ func _init() -> void:
 		var glow := MeshInstance3D.new()
 		glow.mesh = IndicatorVisuals.flare()
 		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_low_beams.add_child(low_beam)
+		_low_beams.add_child(low_flare)
 		indicator.add_child(front)
 		indicator.add_child(side)
 		indicator.add_child(glow)
@@ -136,6 +152,10 @@ func activate(p_kind: Kind, variant: int, p_lane: int, x: float, z: float) -> vo
 		var side := -1.0 if i == 0 else 1.0
 		_flares[i].position = Vector3(side * spec.headlight_x, spec.headlight_y, front + 0.2)
 		_beams[i].position = Vector3(side * spec.headlight_x, spec.headlight_y, front + HighBeamVisuals.BEAM_LENGTH * 0.5)
+		var half := HighBeamVisuals.LOW_BEAM_LENGTH * 0.5
+		var pitch := deg_to_rad(HighBeamVisuals.LOW_BEAM_PITCH)
+		_low_parts[i * 2].position = Vector3(side * spec.headlight_x, spec.headlight_y - sin(pitch) * half, front + cos(pitch) * half)
+		_low_parts[i * 2 + 1].position = Vector3(side * spec.headlight_x, spec.headlight_y, front + 0.15)
 
 
 ## Avvia un cambio corsia: prima la freccia, poi la manovra.
@@ -190,6 +210,11 @@ func tick_lane_change(dt: float) -> void:
 
 
 ## Lampeggia con gli abbaglianti count volte.
+## Anabbaglianti accesi (notte, nebbia, pioggia, gallerie): l'intensità è comune, vedi HighBeamVisuals.
+func set_low_beams(on: bool) -> void:
+	_low_beams.visible = on
+
+
 func flash_high_beams(count: int) -> void:
 	has_flashed = true
 	_flashes_left = count

@@ -19,7 +19,7 @@ Un piccione vola contromano in autostrada: schiva camion, cartelli e cavalcavia,
 - la prima partita è normale (da Roveredo), la seconda è la sfida giornaliera;
 - in ogni partita un Continua con la pubblicità finta, poi la fine e "Try again", che ricarica la scena;
 - deve completare almeno 2 tratte per partita, con il cartello a bordo strada allineato al confine (entro 3 m);
-- prima di partire, controlla le regole della pubblicità a schermo intero, l'anello delle tratte, i seed della sfida giornaliera e il salvataggio JSON.
+- prima di partire, controlla le regole della pubblicità a schermo intero, l'anello delle tratte, i seed della sfida giornaliera, l'estrazione di meteo e ora (prima tratta sempre di giorno), i preset di atmosfera e il salvataggio JSON.
 
 Termina con `[Smoke] OK` se non ci sono errori, altrimenti stampa gli errori ed esce con codice 1. Non tocca il record salvato.
 
@@ -31,6 +31,9 @@ Opzioni (dopo `--`):
 - `--shots`, con un driver video (non `--headless`): salva in `user://` una schermata ogni 6 s e una per ogni stato (countdown, impatto, "Continue?", pubblicità, game over);
 - `--survive=20`: impatti ignorati solo per i primi 20 s, per partite più brevi;
 - `--no-ads`: simula la mancanza di pubblicità, quindi niente pannello "Continue?" (funziona anche giocando normalmente).
+- `--time=night` e/o `--weather=fog`: forzano ora (`day`, `sunset`, `night`) e meteo (`sun`, `cloudy`, `fog`, `rain`, `snow`) di tutte le tratte, anche giocando normalmente.
+
+**Provare meteo e ora mentre si gioca** (solo build di debug, cioè da editor): **F7** cambia l'ora del giorno, **F8** il meteo, **F9** torna a quelli del seed. Funziona anche nel menu e resta valido dopo "Try again". Il bonus di punti segue quello forzato.
 
 ## Comandi
 
@@ -64,6 +67,8 @@ Opzioni (dopo `--`):
 - **Tratte:** si vola su un anello di 9 tratte (vedi "L'anello" più sotto). All'ingresso di ogni tratta c'è un **cartello verde a bordo strada** (oltre il guardrail esterno, solo scenografia) che si vede arrivare da lontano. Quando ci passi accanto compare anche il banner nell'HUD ("WELCOME TO TICINO", oppure il nome della zona) con un bonus di 500 × giro. In alto al centro ci sono il nome della tratta e la barra di avanzamento; il game over mostra fin dove si è arrivati ("Lap 1 · Leventina 62%").
 - **Giri:** ripassando dalla partenza inizia il giro successivo, con i punti distanza moltiplicati (×1.25 al secondo giro, ×1.5 al terzo…) e le file di traffico un po' più fitte.
 - **Sfida giornaliera:** dal titolo, "DAILY CHALLENGE". Ogni giorno (UTC) ha un seed e una tratta di partenza uguali per tutti, quindi lo stesso percorso e lo stesso meteo. Il record del giorno è separato da quello normale.
+- **Meteo e ora del giorno:** ogni tratta ha il suo meteo (sole, nuvoloso, nebbia, pioggia, neve, tra quelli possibili per quella tratta) e la sua ora (giorno 60%, tramonto 20%, notte 20%), estratti dal seed. La prima tratta della partita è sempre di giorno. Il cambio avviene all'ingresso della tratta: graduale in 5 s all'aperto, in 1 s se si è in galleria.
+- **Bonus di visibilità:** i punti distanza si moltiplicano per notte ×1.3, nebbia ×1.2, neve ×1.15, pioggia ×1.1 (cumulabili: notte con nebbia ×1.56). Il bonus attivo è scritto in oro sotto la barra della tratta.
 - **Difficoltà:** cresce con i metri percorsi (al massimo dopo 4 km), non col tempo. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
 
 ## Architettura
@@ -91,6 +96,7 @@ Scripts/
 │   ├── route_segment.gd     Una tratta: nome, cantone, lunghezza, profilo di traffico e strutture, gallerie, meteo possibili
 │   ├── route_data.gd        Le 9 tratte dell'anello
 │   ├── route_tracker.gd     Tratta attuale, avanzamento, giro, seed derivati per tratta
+│   ├── track_conditions.gd  Meteo e ora del giorno di una tratta (dal seed) e bonus di punti
 │   └── run_setup.gd         Partita normale (seed casuale, da Roveredo) o sfida giornaliera (seed della data)
 ├── Rendering/
 │   ├── low_poly_builder.gd  Primitive → ArrayMesh flat-shaded con vertex color
@@ -115,10 +121,11 @@ Scripts/
 │   ├── pickup.gd            Briciole (ricarica cacca)
 │   ├── road_scroller.gd / road_meshes.gd     Strada a segmenti riciclati
 │   ├── structure_meshes.gd
+│   ├── atmosphere.gd        Preset di meteo × ora del giorno e transizioni (cielo, sole, nebbia, luce, montagne, strada bagnata, fari)
 │   └── scenery_factory.gd   Cielo, sole, nebbia, montagne
 ├── Audio/game_audio.gd      Pool di player 2D/3D, loop d'ambiente, bus World/Ambience/UI, riverbero in galleria
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
-├── Effects/                 Testi fluttuanti, esplosione di piume
+├── Effects/                 Testi fluttuanti, esplosione di piume, pioggia e neve attorno alla camera
 └── UI/                      HUD, controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown)
 ```
 
@@ -146,7 +153,7 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 - **Volo continuo su un anello di tratte**, senza livelli: Roveredo → Bellinzona → Gottardo → Lucerna → Zurigo → Walensee → Coira → San Bernardino → Roveredo, poi si ricomincia. Il record si batte in un'unica corsa, e le tratte danno il senso di progresso.
 - **Partita normale sempre da Roveredo**, così i record sono confrontabili. La **sfida giornaliera** parte ogni giorno da una tratta diversa, così prima o poi tutti vedono tutto il percorso.
 - **Gallerie a doppia canna e 3 corsie** ovunque, anche al Gottardo e al San Bernardino.
-- **Meteo casuale per tratta**, non fisso: viene dal seed della partita, quindi cambia da una partita all'altra ma nella sfida giornaliera è uguale per tutti.
+- **Meteo e ora del giorno casuali per tratta**, non fissi: vengono dal seed della partita, quindi cambiano da una partita all'altra ma nella sfida giornaliera sono uguali per tutti. La prima tratta della partita è sempre di giorno.
 - **Un solo "Continua" con pubblicità a premio per partita.**
 - **Server proprio su Infomaniak:** una nuova VPS dedicata ai giochi (1 vCPU / 2 GB per iniziare, da scalare quando il monitoraggio lo indica) con un dominio dedicato (`moesagames.ch`), condivisa da tutti i giochi. Ospita API, classifica mondiale, informativa privacy e pagina di cancellazione account. Tutto gira in **Docker Compose**.
 
@@ -158,7 +165,7 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 | Morte al primo colpo | Frustrante: si ripete il livello | Naturale: "batti il tuo record" |
 | "Continua" con pubblicità | Ha poco senso (tanto vale ricominciare il livello) | Ha senso: il giocatore sta perdendo un record |
 | Spazi per la pubblicità | Pochi (tra i livelli) | A ogni morte |
-| Meteo e giorno/notte | Fissi per livello | Cambiano durante il volo, all'uscita delle gallerie |
+| Meteo e giorno/notte | Fissi per livello | Cambiano durante il volo, a ogni tratta |
 
 ### L'anello
 
@@ -182,7 +189,6 @@ I valori sono in `Scripts/Route/route_data.gd` e si bilanciano lì.
 - Il cartello a bordo strada parte dalla linea di generazione (300 m) e scorre con la strada, quindi arriva accanto al piccione esattamente al cambio di tratta. Gallerie e cantieri non attraversano mai il confine (diventano portali, sempre in base al seed), e nei pressi del cartello non ci sono portali né cavalcavia: il cartello non finisce mai dentro la montagna o sotto un ponte.
 - Le gallerie hanno il nome della tratta sul portale (Gotthard Tunnel, Seelisberg Tunnel, Kerenzerberg Tunnel, San Bernardino Tunnel…).
 - Ci sono **missioni giornaliere** ("colpisci 5 bus", "vola 1 km di notte"), che portano il giocatore a fare più partite (Fase 6).
-- *Da decidere con la Fase 4:* l'ora del giorno, se casuale per tratta come il meteo oppure se avanza durante la partita.
 
 ### Ambientazioni per luogo (da valutare)
 
@@ -432,12 +438,14 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [ ] Mini mappa dell'anello nel game over
 
 ### Fase 4: meteo e giorno/notte
-- [ ] Preset d'ambiente (nebbia, sole, luce ambiente, cielo, luci) con transizioni graduali, riusando il sistema delle gallerie
-- [ ] Meteo di ogni tratta già scelto dal seed (`RouteTracker.weather`): applicarlo all'ingresso della tratta o all'uscita della galleria successiva
-- [ ] Sole, nuvoloso, tramonto, nebbia, neve (San Bernardino, valle del Reno)
-- [ ] Notte: cielo scuro, anabbaglianti sempre accesi, lampioni
-- [ ] Pioggia: poche particelle attorno alla camera, strada lucida, nuovi suoni (pioggia in loop, tuono)
-- [ ] Moltiplicatore di punti nell'HUD ("Foggy ×1.2", "Night ×1.3")
+- [x] Meteo e ora del giorno per tratta dal seed (`TrackConditions`), prima tratta sempre di giorno
+- [x] Preset di atmosfera (cielo, sole, ombre, luce ambiente, nebbia, montagne) per 5 meteo × 3 ore, con transizioni graduali sommate al buio delle gallerie
+- [x] Sole, nuvoloso, nebbia, pioggia, neve; giorno, tramonto (sole basso davanti), notte (luna, cielo scuro)
+- [x] Anabbaglianti accesi su tutti i mezzi di notte, con nebbia, pioggia, neve e in galleria
+- [x] Pioggia e neve attorno alla camera senza particelle; strada (e mezzi) lucidi sotto la pioggia; loop di pioggia e tuoni sintetizzati
+- [x] Moltiplicatore di punti nell'HUD ("NIGHT ×1.3  ·  FOG ×1.2")
+- [x] Lampioni accesi di notte (e appena al tramonto): alone sulle lampade e macchie di luce sull'asfalto, additivi, spenti in galleria
+- [ ] *Più avanti:* stelle, spruzzi dietro i camion, lampi col tuono, neve a terra
 
 ### Fase 5: server dei giochi e classifica mondiale
 - [ ] Nuova VPS Infomaniak (1 vCPU / 2 GB) + dominio dedicato ai giochi (`moesagames.ch`), sottodominio `api.`
@@ -495,25 +503,24 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - Pipeline del gioco: export AAB headless e caricamento automatico nel test interno di Play Console
 - Classifiche tra amici, classifica per tratta
 
-## Idea: meteo e ora del giorno (Fase 4)
-
-Condizioni che cambiano la **distanza visiva** e l'atmosfera:
+## Meteo e ora del giorno
 
 | Condizione | Visibilità | Effetti |
 |---|---|---|
-| **Sole** | piena (com'è ora) | ombre nette, cielo azzurro |
-| **Nebbia** | molto ridotta | nebbia fitta e grigia; i mezzi spuntano all'improvviso, fari e abbaglianti diventano l'avviso principale |
-| **Pioggia** | ridotta | gocce attorno alla camera, strada bagnata e lucida con i riflessi dei fari, spruzzi dietro i camion, cielo coperto, lampi e tuoni ogni tanto |
-| **Notte** | ridotta ai fari | sole spento, cielo scuro con stelle, lampioni accesi, anabbaglianti sempre accesi con cono di luce, fanalini rossi più visibili sull'altra carreggiata |
+| **Sole** | piena | ombre nette, cielo azzurro |
+| **Nuvoloso** | quasi piena | cielo grigio, sole debole e nascosto, ombre leggere |
+| **Nebbia** | molto ridotta (da 12 m, tutto coperto a 130 m) | cielo e montagne spariscono nel grigio; fari accesi |
+| **Pioggia** | ridotta (da 70 m a 270 m) | trattini di pioggia attorno alla camera, strada un po' lucida, cielo scuro, loop di pioggia e tuoni ogni 10-24 s; riflessi bassi, così il cielo grigio non si specchia come una fascia bianca in fondo |
+| **Neve** | ridotta (da 55 m a 230 m) | fiocchi che scendono lenti, cielo chiaro e lattiginoso |
+| **Tramonto** | piena | sole basso e arancione davanti e di lato, controluce, ombre lunghe; nebbia blu-viola scuro come le montagne in controluce e riflessi ridotti, così in fondo la strada sfuma nelle montagne senza la striscia chiara all'orizzonte |
+| **Notte** | ridotta | luna fredda, cielo blu notte, montagne scure, anabbaglianti accesi su tutti i mezzi, lampioni accesi con le macchie di luce sulla strada |
 
-Si possono combinare, ad esempio notte con pioggia.
-
-Note di design:
-- Con meno visibilità servono più avvisi: abbaglianti, frecce e lampeggianti del cantiere sono già unlit e restano leggibili. Si potrebbero rendere più marcati quando la visibilità è bassa.
-- Il varco garantito resta uguale. Si potrebbe compensare la visibilità ridotta allungando un po' la distanza tra le file o con un leggero bonus punti ("Foggy x1.2", "Night x1.3").
-- Il cambio di meteo potrebbe avvenire all'uscita delle gallerie, che è il momento naturale per una transizione.
-- Ogni condizione andrebbe definita come preset (densità e colore della nebbia, energia di sole e ambiente, colore del cielo, luci accese) con transizioni graduali, riusando il sistema che già scurisce le gallerie.
-- Su mobile la pioggia va fatta con poche particelle legate alla camera, senza luci dinamiche.
+Meteo e ora si combinano (per esempio notte con pioggia). Come funziona:
+- **Un preset per combinazione** (`Atmosphere.preset_for`): l'ora dà la base (cielo, sole, luce, nebbia) e il meteo la sposta (colori del cielo e della nebbia, scuriti di notte, sole più debole, distanza della nebbia, precipitazioni).
+- **Transizioni** come interpolazione tra due preset, con il sole che ruota per la via più breve. In galleria il buio si somma: niente sole né precipitazioni, nebbia normale, luce ambiente delle lampade con un colore fisso (non dal cielo), così di notte la galleria è illuminata come di giorno.
+- **Niente shader nuovi durante la partita:** cambiano solo parametri di ambiente e materiali già compilati. Le montagne hanno l'emissione sempre attiva (nera col sereno) e "spariscono" nella nebbia diventando del suo colore. Pioggia, neve e anabbaglianti vengono preparati durante il menu.
+- **Mobile:** il cielo (e la luce ambiente che ne deriva) si aggiorna al massimo ogni 0.12 s durante le transizioni. Pioggia e neve sono due mesh di trattini già pronti che scorrono attorno alla camera, senza particelle e senza luci dinamiche. Anabbaglianti e lampioni hanno un solo materiale condiviso ciascuno (l'intensità si regola lì, non oggetto per oggetto); le luci dei lampioni si spengono gradualmente tra 110 e 230 m, così in nebbia non galleggiano nel nulla.
+- **Leggibilità:** abbaglianti, frecce, fari e lampeggianti del cantiere sono unlit e restano visibili con ogni meteo. Il varco garantito non cambia: la visibilità ridotta è compensata dal bonus di punti.
 
 ## Audio
 
@@ -535,5 +542,7 @@ Note di design:
 | Schianto, schermata di game over | `crash`, `game_over` | |
 | Pulsanti, pausa | `ui_click` | bus UI, funziona anche in pausa |
 | Loop | `road_loop`, `wind_loop`, `tunnel_loop` | volume (e tono del vento) in base a velocità, boost e buio della galleria |
+| Pioggia | `rain_loop` | attutita in galleria |
+| Tuono | `thunder` | col temporale, ogni 10-24 s, solo all'aperto e durante il volo |
 
 I volumi si ritoccano in `game_audio.gd` (`BASE_DB` per effetto, `WORLD_BUS_DB`/`AMBIENCE_BUS_DB`/`UI_BUS_DB` per bus) e in `main.gd` (`_update_ambience`) per i loop. Per rigenerare i suoni: `python Tools/synth_sfx.py Audio/sfx`.

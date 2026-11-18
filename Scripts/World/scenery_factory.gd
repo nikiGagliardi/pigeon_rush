@@ -7,7 +7,11 @@ const AMBIENT_ENERGY := 1.0
 const FOG_BEGIN := 90.0
 const FOG_END := 300.0
 const FOG_COLOR := Color("a3bed6")
-const TUNNEL_FOG_COLOR := Color(0.22, 0.21, 0.19)
+
+## Materiale delle montagne lontane: lo usa l'atmosfera (scure di notte, "sparite" nella nebbia).
+static var mountain_material: StandardMaterial3D
+## Prato infinito del fondale: l'atmosfera ne regola il riflesso (tramonto).
+static var grass_material: StandardMaterial3D
 
 
 static func create_environment() -> WorldEnvironment:
@@ -62,6 +66,7 @@ static func create_backdrop() -> Node3D:
 	var grass := StandardMaterial3D.new()
 	grass.albedo_color = Palette.GRASS
 	grass.roughness = 1.0
+	SceneryFactory.grass_material = grass
 	var ground := MeshInstance3D.new()
 	ground.mesh = plane
 	ground.material_override = grass
@@ -70,15 +75,19 @@ static func create_backdrop() -> Node3D:
 	root.add_child(ground)
 
 	# le montagne stanno oltre la fine della nebbia: la ignorano, e il "velo" è già nei loro colori
-	var mountain_material := StandardMaterial3D.new()
-	mountain_material.vertex_color_use_as_albedo = true
-	mountain_material.vertex_color_is_srgb = true
-	mountain_material.roughness = 1.0
-	mountain_material.disable_fog = true
+	var mountains_mat := StandardMaterial3D.new()
+	mountains_mat.vertex_color_use_as_albedo = true
+	mountains_mat.vertex_color_is_srgb = true
+	mountains_mat.roughness = 1.0
+	mountains_mat.disable_fog = true
+	# emissione sempre attiva (nera di giorno): l'atmosfera la usa per farle sparire nella nebbia senza cambiare shader
+	mountains_mat.emission_enabled = true
+	mountains_mat.emission = Color.BLACK
+	SceneryFactory.mountain_material = mountains_mat
 	var mountains := MeshInstance3D.new()
 	mountains.mesh = _build_mountains()
 	mountains.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mountains.material_override = mountain_material
+	mountains.material_override = mountains_mat
 	root.add_child(mountains)
 
 	return root

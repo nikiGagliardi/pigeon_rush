@@ -19,6 +19,7 @@ var _boost: IconBar
 var _ammo_panel: PanelContainer
 var _route_name: Label
 var _route_bar: ProgressBar
+var _conditions: Label
 var _banner: Control
 var _banner_title: Label
 var _banner_subtitle: Label
@@ -112,6 +113,8 @@ func _ready() -> void:
 	_route_bar.add_theme_stylebox_override("background", UiStyle.flat(Color(0.0, 0.0, 0.0, 0.4), 5, 0.0))
 	_route_bar.add_theme_stylebox_override("fill", UiStyle.flat(Palette.INFO, 5, 0.0))
 	route.add_child(_route_bar)
+	_conditions = UiStyle.make_label("", 18, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	route.add_child(_conditions)
 	add_child(route)
 	route.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	route.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 16)
@@ -119,7 +122,7 @@ func _ready() -> void:
 	_combo = UiStyle.make_label("", 44, Palette.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	add_child(_combo)
 	_combo.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_combo.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 72)
+	_combo.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 100)
 	_combo.pivot_offset = Vector2(0.0, 30.0)
 
 	# --- centro in basso: suggerimenti + pannello munizioni ---
@@ -140,6 +143,12 @@ func _ready() -> void:
 	_low_fly.modulate = Color(1.0, 1.0, 1.0, 0.0)
 
 	_build_banner()
+
+
+## Bonus di meteo e ora sotto la barra della tratta ("NIGHT ×1.3  ·  FOG ×1.2"); vuoto = nascosto.
+func set_conditions(text: String) -> void:
+	_conditions.text = text
+	_conditions.visible = not text.is_empty()
 
 
 ## Cartello all'ingresso di una tratta: "WELCOME TO TICINO", nome della tratta, bonus.

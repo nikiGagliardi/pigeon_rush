@@ -111,6 +111,12 @@ static func _catalog() -> Array[Callable]:
 
 	jobs.append(func() -> Mesh: return HighBeamVisuals.flare())
 	jobs.append(func() -> Mesh: return HighBeamVisuals.beam())
+	jobs.append(func() -> Mesh: return HighBeamVisuals.low_beam())
+	jobs.append(func() -> Mesh: return HighBeamVisuals.low_flare())
+	jobs.append(func() -> Mesh: return Precipitation.rain_mesh())
+	jobs.append(func() -> Mesh: return Precipitation.snow_mesh())
+	jobs.append(func() -> Mesh: return RoadMeshes.night_pools())
+	jobs.append(func() -> Mesh: return RoadMeshes.lamp_flare())
 	jobs.append(func() -> Mesh: return IndicatorVisuals.lamp())
 	jobs.append(func() -> Mesh: return IndicatorVisuals.flare())
 

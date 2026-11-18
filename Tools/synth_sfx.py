@@ -348,3 +348,36 @@ def game_over_sting():
 
 
 save("game_over", game_over_sting())
+
+
+# ------------------------------------------------------------------ meteo (Fase 4)
+def rain_loop(dur=6.0):
+    """Pioggia: fruscio largo + gocce singole (clic brevi) a caso."""
+    n = int(SR * dur)
+    t = t_axis(dur)
+    hiss = bandpass(pink_noise(n), 800, 7000) * 0.55
+    body = lowpass(pink_noise(n), 600) * 0.25
+    drops = np.zeros(n)
+    for _ in range(int(dur * 70)):
+        pos = rng.integers(0, n - 400)
+        length = int(rng.integers(80, 300))
+        tick = rng.standard_normal(length) * exp_decay(length, 0.0015) * rng.uniform(0.2, 0.7)
+        drops[pos:pos + length] += tick
+    drops = bandpass(drops, 1500, 9000)
+    swell = 1 + 0.12 * np.sin(2 * np.pi * t / dur * 3)
+    return make_loop((hiss + body + drops * 0.6) * swell)
+
+
+def thunder(dur=4.5):
+    """Tuono lontano: schiocco iniziale smorzato, poi un brontolio che rotola e si spegne."""
+    n = int(SR * dur)
+    t = t_axis(dur)
+    crack = highpass(rng.standard_normal(n), 300) * exp_decay(n, 0.12) * 0.5
+    rumble = lowpass(brown_noise(n), 180)
+    rolls = 0.6 + 0.4 * np.abs(np.sin(2 * np.pi * t * 1.3)) * (0.7 + 0.3 * np.sin(2 * np.pi * t * 0.37))
+    rumble = highpass(rumble, 35, 2) * rolls * env(n, 0.08, 1.8) * exp_decay(n, 1.6)
+    return soft_clip(crack + rumble * 1.4, 1.2)
+
+
+save("rain_loop", rain_loop(), -6)
+save("thunder", thunder(), -2)

@@ -10,6 +10,10 @@ const LAP_SCORE_BONUS := 0.25 # moltiplicatore dei punti distanza: ×1, ×1.25, 
 
 enum Stream { STRUCTURES, ROWS, PICKUPS, LANES, WEATHER }
 
+## Solo per provare (build di debug): forzano meteo e/o ora di tutte le tratte. Vuoto = come da seed.
+static var debug_weather: String = ""
+static var debug_time: String = ""
+
 var run_seed: int = 0
 var start_segment: int = 0
 var segment_index: int = 0
@@ -19,12 +23,14 @@ var segments_completed: int = 0
 
 var _segment_start_distance: float = 0.0
 var _distance: float = 0.0
+var _conditions: TrackConditions
 
 
 func _init(p_seed: int = 0, p_start_segment: int = 0) -> void:
 	run_seed = p_seed
 	start_segment = posmod(p_start_segment, RouteData.count())
 	segment_index = start_segment
+	_conditions = conditions_for(run_seed, segment_index, lap, start_segment)
 
 
 var segment: RouteSegment:
@@ -49,10 +55,14 @@ var lap_multiplier: float:
 		return 1.0 + LAP_SCORE_BONUS * (lap - 1)
 
 
-## Meteo della tratta attuale (per la Fase 4): casuale dal seed, quindi uguale per tutti nella sfida giornaliera.
-var weather: String:
+## Meteo e ora del giorno della tratta attuale: casuali dal seed, quindi uguali per tutti nella sfida giornaliera.
+var conditions: TrackConditions:
 	get:
-		return weather_for(run_seed, segment_index, lap)
+		if debug_weather.is_empty() and debug_time.is_empty():
+			return _conditions
+		return TrackConditions.make(
+			_conditions.weather if debug_weather.is_empty() else debug_weather,
+			_conditions.time_of_day if debug_time.is_empty() else debug_time)
 
 
 ## Avanza con i metri percorsi dalla partenza; emette segment_entered per ogni tratta nuova.
@@ -67,6 +77,7 @@ func update(distance: float) -> void:
 		# il giro cambia ripassando dal punto di partenza (Roveredo nelle partite normali)
 		if segment_index == start_segment:
 			lap += 1
+		_conditions = conditions_for(run_seed, segment_index, lap, start_segment)
 		segment_entered.emit(segment_index, lap)
 
 
@@ -105,11 +116,9 @@ static func derived_seed(p_seed: int, stream: Stream, index: int, p_lap: int) ->
 	return hash([p_seed, int(stream), index, p_lap])
 
 
-static func weather_for(p_seed: int, index: int, p_lap: int) -> String:
-	var options := RouteData.get_segment(index).weathers
-	var rng := RandomNumberGenerator.new()
-	rng.seed = derived_seed(p_seed, Stream.WEATHER, index, p_lap)
-	return options[rng.randi_range(0, options.size() - 1)]
+## La prima tratta della partita (partenza, primo giro) è sempre di giorno.
+static func conditions_for(p_seed: int, index: int, p_lap: int, p_start_segment: int) -> TrackConditions:
+	return TrackConditions.roll(p_seed, index, p_lap, index == p_start_segment and p_lap == 1)
 
 
 ## Verifica usata dalla prova automatica. Restituisce l'elenco degli errori.
@@ -148,6 +157,26 @@ static func self_check() -> PackedStringArray:
 		errors.append("sfida giornaliera diversa con la stessa data")
 	if a.seed == c.seed:
 		errors.append("sfida giornaliera uguale in due giorni diversi")
-	if weather_for(a.seed, 2, 1) != weather_for(b.seed, 2, 1):
+	if not conditions_for(a.seed, 2, 1, a.start_segment).equals(conditions_for(b.seed, 2, 1, b.start_segment)):
 		errors.append("meteo diverso con lo stesso seed")
+
+	# prima tratta sempre di giorno; nelle altre, su tanti seed, devono uscire tutte le ore e tutti i meteo
+	var times := {}
+	var weathers := {}
+	for test_seed in 400:
+		if conditions_for(test_seed, 0, 1, 0).time_of_day != "day":
+			errors.append("prima tratta non di giorno (seed %d)" % test_seed)
+			break
+		for index in range(1, RouteData.count()):
+			var cond := conditions_for(test_seed, index, 1, 0)
+			times[cond.time_of_day] = true
+			weathers[cond.weather] = true
+			if not RouteData.get_segment(index).weathers.has(cond.weather):
+				errors.append("meteo %s non previsto per %s" % [cond.weather, RouteData.get_segment(index).name])
+	if times.size() != TrackConditions.TIMES.size():
+		errors.append("ore del giorno estratte: %s" % str(times.keys()))
+	if weathers.size() != TrackConditions.WEATHERS.size():
+		errors.append("meteo estratti: %s" % str(weathers.keys()))
+	if not is_equal_approx(TrackConditions.make("fog", "night").score_multiplier, 1.56):
+		errors.append("moltiplicatore notte con nebbia sbagliato")
 	return errors

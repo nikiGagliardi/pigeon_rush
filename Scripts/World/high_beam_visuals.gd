@@ -4,10 +4,17 @@ extends RefCounted
 ## e cono di luce (cilindro additivo). Nessuna luce dinamica: costo minimo anche su mobile.
 
 const BEAM_LENGTH := 16.0
+## Anabbaglianti (notte, nebbia, pioggia): più corti, puntati un po' in basso, intensità comune a tutti i mezzi.
+const LOW_BEAM_LENGTH := 11.0
+const LOW_BEAM_PITCH := 8.0
+const LOW_BEAM_COLOR := Color(0.16, 0.15, 0.12)
+const LOW_FLARE_COLOR := Color(0.55, 0.52, 0.45)
 
 static var _flare: QuadMesh
 static var _beam: CylinderMesh
 static var _glow: GradientTexture2D
+static var _low_beam: CylinderMesh
+static var _low_flare: QuadMesh
 
 
 static func flare() -> QuadMesh:
@@ -58,3 +65,43 @@ static func beam() -> CylinderMesh:
 		_beam.cap_bottom = false
 		_beam.material = mat
 	return _beam
+
+
+static func low_beam() -> CylinderMesh:
+	if _low_beam == null:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.albedo_color = LOW_BEAM_COLOR
+		_low_beam = CylinderMesh.new()
+		_low_beam.top_radius = 0.1
+		_low_beam.bottom_radius = 1.5
+		_low_beam.height = LOW_BEAM_LENGTH
+		_low_beam.radial_segments = 8
+		_low_beam.rings = 1
+		_low_beam.cap_top = false
+		_low_beam.cap_bottom = false
+		_low_beam.material = mat
+	return _low_beam
+
+
+static func low_flare() -> QuadMesh:
+	if _low_flare == null:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.albedo_color = LOW_FLARE_COLOR
+		mat.albedo_texture = radial_glow()
+		_low_flare = QuadMesh.new()
+		_low_flare.size = Vector2(1.3, 1.3)
+		_low_flare.material = mat
+	return _low_flare
+
+
+## Intensità degli anabbaglianti di tutti i mezzi (0..1): un solo materiale condiviso, nessun costo per mezzo.
+static func set_low_beam_level(level: float) -> void:
+	var k := clampf(level, 0.0, 1.0)
+	(low_beam().material as StandardMaterial3D).albedo_color = LOW_BEAM_COLOR * k
+	(low_flare().material as StandardMaterial3D).albedo_color = LOW_FLARE_COLOR * k

@@ -28,7 +28,8 @@ var _rng := RandomNumberGenerator.new()
 
 var _sun: DirectionalLight3D
 var _environment: Environment
-var _applied_darkness: float = -1.0
+var _atmosphere: Atmosphere
+var _precipitation: Precipitation
 
 var _pigeon: PigeonController
 var _camera: ChaseCamera
@@ -90,6 +91,11 @@ func _ready() -> void:
 	_smoke_test = OS.is_debug_build() and OS.get_cmdline_user_args().has("--smoke-test")
 	_smoke_shots = OS.get_cmdline_user_args().has("--shots")
 	for arg in OS.get_cmdline_user_args():
+		# prova di meteo e ora (solo debug): -- --time=night --weather=fog
+		if OS.is_debug_build() and arg.begins_with("--time="):
+			RouteTracker.debug_time = arg.trim_prefix("--time=")
+		if OS.is_debug_build() and arg.begins_with("--weather="):
+			RouteTracker.debug_weather = arg.trim_prefix("--weather=")
 		if arg.begins_with("--survive="):
 			_smoke_survive_time = arg.trim_prefix("--survive=").to_float() # partite più brevi per le schermate
 	if _smoke_test and not _smoke_checked:
@@ -133,6 +139,13 @@ func _ready() -> void:
 	add_child(_camera)
 	_camera.make_current()
 	_camera.snap()
+
+	# meteo e ora del giorno (pioggia e neve sono attaccate alla camera)
+	_precipitation = Precipitation.new()
+	_camera.add_child(_precipitation)
+	_atmosphere = Atmosphere.new()
+	add_child(_atmosphere)
+	_atmosphere.setup(_environment, _sun, SceneryFactory.mountain_material, _precipitation)
 
 	# prepara mesh e shader durante il menu: niente scatti alla prima galleria/cantiere
 	_warmup = AssetWarmup.new()
@@ -197,13 +210,45 @@ func _process(delta: float) -> void:
 			_tick_wreck(dt)
 
 	_camera.tick(dt, _session.speed.boost_normalized, _session.speed.speed_normalized, _traffic.camera_ceiling(_camera.position.z))
-	_apply_tunnel_lighting(_traffic.tunnel_darkness)
+	_update_atmosphere(dt)
 	_update_ambience()
 	_texts.tick(dt)
 	if _smoke_shots:
 		_smoke_state_shots(dt)
 	_touch.ammo = _session.ammo
 	_hud.refresh(dt, _session, _poop.locked_target != null, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
+
+
+## Tasti di prova (solo build di debug): F7 cambia l'ora, F8 il meteo, F9 torna a quelli del seed.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if not OS.is_debug_build() or key == null or not key.pressed or key.echo:
+		return
+	var current := _session.route.conditions if _state != GameState.TITLE else _atmosphere.conditions
+	match key.keycode:
+		KEY_F7:
+			RouteTracker.debug_time = _next_of(TrackConditions.TIMES, current.time_of_day)
+		KEY_F8:
+			RouteTracker.debug_weather = _next_of(TrackConditions.WEATHERS, current.weather)
+		KEY_F9:
+			RouteTracker.debug_time = ""
+			RouteTracker.debug_weather = ""
+		_:
+			return
+	get_viewport().set_input_as_handled()
+	var target := _session.route.conditions
+	if _state == GameState.TITLE:
+		# nel menu la tratta non è ancora partita: si applica solo quello forzato
+		target = TrackConditions.make(
+			"sun" if RouteTracker.debug_weather.is_empty() else RouteTracker.debug_weather,
+			"day" if RouteTracker.debug_time.is_empty() else RouteTracker.debug_time)
+	_atmosphere.transition_to(target, 1.0)
+	_hud.set_conditions(target.bonus_label())
+	print("[Debug] meteo %s" % target)
+
+
+static func _next_of(list: PackedStringArray, value: String) -> String:
+	return list[(list.find(value) + 1) % list.size()]
 
 
 func _notification(what: int) -> void:
@@ -259,7 +304,8 @@ func _tick_playing(dt: float) -> void:
 		return # impatto durante le collisioni
 
 	var route := _session.route
-	_session.score.tick(dt, ground_step, speed.multiplier * route.lap_multiplier, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
+	var bonus := route.lap_multiplier * route.conditions.score_multiplier
+	_session.score.tick(dt, ground_step, speed.multiplier * bonus, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT)
 	route.update(_session.score.distance)
 
 
@@ -402,14 +448,25 @@ func _play_lock_sound() -> void:
 	_last_lock = locked
 
 
-## In galleria sole e luce ambiente si spengono: restano visibili lampade e fari (unlit).
-func _apply_tunnel_lighting(darkness: float) -> void:
-	if absf(darkness - _applied_darkness) < 0.005:
-		return
-	_applied_darkness = darkness
-	_sun.light_energy = lerpf(SceneryFactory.SUN_ENERGY, 0.0, darkness)
-	_environment.ambient_light_energy = lerpf(SceneryFactory.AMBIENT_ENERGY, 0.3, darkness)
-	_environment.fog_light_color = SceneryFactory.FOG_COLOR.lerp(SceneryFactory.TUNNEL_FOG_COLOR, darkness)
+## Meteo e ora del giorno, sommati al buio delle gallerie; fari del traffico e pioggia di conseguenza.
+func _update_atmosphere(dt: float) -> void:
+	_atmosphere.update(dt, _traffic.tunnel_darkness)
+	_traffic.set_headlights(_atmosphere.headlight_level)
+	_road.set_street_lights(_atmosphere.street_light_level)
+	match _state:
+		GameState.TITLE:
+			_precipitation.world_speed = TITLE_WORLD_SPEED
+		GameState.COUNTDOWN:
+			_precipitation.world_speed = _countdown_world_speed
+		_:
+			_precipitation.world_speed = _session.speed.pigeon_speed
+	_audio.set_weather(_precipitation_level(), _traffic.tunnel_darkness, _state == GameState.PLAYING)
+
+
+## Intensità della pioggia per l'audio (0..1).
+func _precipitation_level() -> float:
+	var c := _atmosphere.conditions
+	return 1.0 if c.weather == "rain" else 0.0
 
 
 func _try_poop() -> void:
@@ -513,6 +570,8 @@ func _start_game(setup: RunSetup) -> void:
 	_session.begin(setup)
 	_session.route.segment_entered.connect(_on_segment_entered)
 	_traffic.begin_segment(_session.route)
+	_atmosphere.transition_to(_session.route.conditions, 2.5)
+	_hud.set_conditions(_session.route.conditions.bonus_label())
 	_hud.set_best(_save.daily_best_for(setup.daily_date) if setup.is_daily() else _save.best_score)
 
 	Ads.policy.on_run_started()
@@ -534,13 +593,16 @@ func _daily_info() -> String:
 func _on_segment_entered(index: int, lap: int) -> void:
 	var route := _session.route
 	_traffic.begin_segment(route)
+	# in galleria il cambio non si vede: si fa in fretta; all'aperto è graduale
+	_atmosphere.transition_to(route.conditions, 1.0 if _traffic.tunnel_darkness > 0.5 else 5.0)
+	_hud.set_conditions(route.conditions.bonus_label())
 	var bonus := GameConfig.SEGMENT_BONUS * lap
 	_session.score.add_points(bonus)
 	_hud.show_route_banner(_banner_title(index, lap), route.segment.name, bonus)
 	_audio.play_ui(Sfx.COUNTDOWN_GO, -2.0, 1.15)
 	if _smoke_test:
 		var sign_z := _traffic.nearest_route_sign_z()
-		print("[Smoke]   tratta: %s (giro %d, meteo %s) a %d m, cartello a %.1f m" % [route.segment.name, lap, route.weather, int(_session.score.distance), sign_z])
+		print("[Smoke]   tratta: %s (giro %d, %s) a %d m, cartello a %.1f m" % [route.segment.name, lap, route.conditions, int(_session.score.distance), sign_z])
 		if absf(sign_z) > 3.0:
 			_smoke_errors.append("cartello della tratta %s non allineato al confine (%.1f m)" % [route.segment.name, sign_z])
 
@@ -762,6 +824,11 @@ func _smoke_finish_run() -> void:
 func _smoke_self_checks() -> void:
 	_smoke_errors.append_array(InterstitialPolicy.self_check())
 	_smoke_errors.append_array(RouteTracker.self_check())
+	for time_of_day: String in TrackConditions.TIMES:
+		for weather: String in TrackConditions.WEATHERS:
+			var p := Atmosphere.preset_for(TrackConditions.make(weather, time_of_day))
+			if p.fog_end <= p.fog_begin or p.sun_energy < 0.0 or p.ambient_energy <= 0.0:
+				_smoke_errors.append("atmosfera %s/%s non valida" % [weather, time_of_day])
 
 	var data := SaveData.new()
 	data.best_score = 12345
@@ -786,4 +853,4 @@ func _smoke_self_checks() -> void:
 		_smoke_errors.append("salvataggio: record giornaliero sbagliato")
 	if v1.best_score != 900:
 		_smoke_errors.append("salvataggio: la sfida giornaliera ha cambiato il record normale")
-	print("[Smoke] controlli di pubblicità, tratte e salvataggio: %s" % ("ok" if _smoke_errors.is_empty() else "%d errori" % _smoke_errors.size()))
+	print("[Smoke] controlli di pubblicità, tratte, atmosfera e salvataggio: %s" % ("ok" if _smoke_errors.is_empty() else "%d errori" % _smoke_errors.size()))
