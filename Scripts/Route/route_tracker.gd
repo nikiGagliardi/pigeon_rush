@@ -93,6 +93,36 @@ func update(distance: float) -> void:
 		segment_entered.emit(segment_index, lap)
 
 
+## Paesaggio a metres davanti al piccione (anche nelle tratte successive).
+func landscape_ahead(metres: float) -> LandscapeMeshes.Landscape:
+	var index := segment_index
+	var into := _distance - _segment_start_distance + metres
+	while into > RouteData.get_segment(index).length:
+		into -= RouteData.get_segment(index).length
+		index = posmod(index + 1, RouteData.count())
+	var target := RouteData.get_segment(index)
+	return target.landscape_at(clampf(into / target.length, 0.0, 1.0))
+
+
+## Luogo tipico più vicino davanti (in questa tratta o nella prossima): [id, metri davanti, chiave unica]
+## o [] se non ce n'è entro max_ahead. La chiave (giro e tratta) evita di farlo comparire due volte.
+func landmark_ahead(max_ahead: float) -> Array:
+	var index := segment_index
+	var start := _segment_start_distance
+	var target_lap := lap
+	for i in 2:
+		var s := RouteData.get_segment(index)
+		if s.landmark != &"":
+			var ahead := start + s.landmark_at * s.length - _distance
+			if ahead > -50.0 and ahead <= max_ahead:
+				return [s.landmark, ahead, "%d:%d" % [target_lap, index]]
+		start += s.length
+		index = posmod(index + 1, RouteData.count())
+		if index == start_segment:
+			target_lap += 1
+	return []
+
+
 func next_segment_index() -> int:
 	return posmod(segment_index + 1, RouteData.count())
 

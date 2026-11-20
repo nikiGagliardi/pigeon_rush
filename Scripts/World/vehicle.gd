@@ -12,6 +12,9 @@ const SIGNAL_TIME := 1.5
 const BLINK_PERIOD := 0.5
 const MAX_STEER_YAW := 0.1 # ~6°
 
+## Bagliori delle luci di ingombro: il camion ne ha di più (VehicleMeshes.truck_marker_positions).
+const MAX_MARKERS := 15
+
 enum LaneChangeState { NONE, SIGNALING, MOVING }
 
 var kind: Kind = Kind.CAR
@@ -48,6 +51,8 @@ var _flares: Array[MeshInstance3D] = []
 var _beams: Array[MeshInstance3D] = []
 var _low_beams: Node3D
 var _low_parts: Array[MeshInstance3D] = [] # per lato: cono, bagliore
+## Bagliori delle luci di ingombro (camion, bus): accesi con gli anabbaglianti, i superflui nascosti.
+var _markers: Array[MeshInstance3D] = []
 var _indicators: Array[Node3D] = [] # 0 = sinistra (-X), 1 = destra (+X)
 var _indicator_parts: Array[MeshInstance3D] = [] # per freccia: anteriore, laterale, bagliore
 
@@ -121,6 +126,14 @@ func _init() -> void:
 		add_child(indicator)
 		_indicators.append(indicator)
 
+	for i in MAX_MARKERS:
+		var marker := MeshInstance3D.new()
+		marker.mesh = HighBeamVisuals.marker_flare()
+		marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marker.visible = false
+		_low_beams.add_child(marker)
+		_markers.append(marker)
+
 
 func activate(p_kind: Kind, variant: int, p_lane: int, x: float, z: float) -> void:
 	kind = p_kind
@@ -156,6 +169,36 @@ func activate(p_kind: Kind, variant: int, p_lane: int, x: float, z: float) -> vo
 		var pitch := deg_to_rad(HighBeamVisuals.LOW_BEAM_PITCH)
 		_low_parts[i * 2].position = Vector3(side * spec.headlight_x, spec.headlight_y - sin(pitch) * half, front + cos(pitch) * half)
 		_low_parts[i * 2 + 1].position = Vector3(side * spec.headlight_x, spec.headlight_y, front + 0.15)
+	_place_markers()
+
+
+## Bagliori arancio sulle luci di ingombro: di notte e con la pioggia camion e bus non sembrano auto.
+func _place_markers() -> void:
+	var used := 0
+	match kind:
+		Kind.TRUCK:
+			var positions := VehicleMeshes.truck_marker_positions()
+			for i in positions.size():
+				var size := 0.7 if i >= VehicleMeshes.TRUCK_FRONT_MARKERS else 1.0
+				_set_marker(used, positions[i] + Vector3(0.0, 0.0, 0.05), Vector3(size, size, 1.0))
+				used += 1
+		Kind.BUS:
+			var display := VehicleMeshes.BUS_DISPLAY_SIZE
+			_set_marker(used, Vector3(0.0, VehicleMeshes.BUS_DISPLAY_Y, spec.length * 0.5 + 0.1),
+				Vector3(display.x + 1.0, display.y + 0.6, 1.0))
+			used += 1
+			for p: Vector3 in VehicleMeshes.bus_marker_positions():
+				_set_marker(used, p + Vector3(0.0, 0.0, 0.05), Vector3(0.8, 0.8, 1.0))
+				used += 1
+	for i in range(used, MAX_MARKERS):
+		_markers[i].visible = false
+
+
+func _set_marker(index: int, at: Vector3, size: Vector3) -> void:
+	var marker := _markers[index]
+	marker.position = at
+	marker.scale = size
+	marker.visible = true
 
 
 ## Avvia un cambio corsia: prima la freccia, poi la manovra.

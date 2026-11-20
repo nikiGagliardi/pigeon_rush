@@ -82,9 +82,11 @@ func _build(job: Callable) -> void:
 ## Tutti i mesh creati a runtime dal gioco.
 static func _catalog() -> Array[Callable]:
 	var jobs: Array[Callable] = []
-	jobs.append(func() -> Mesh: return RoadMeshes.variants()[0])
-	for v in range(1, RoadMeshes.VARIANT_COUNT):
-		jobs.append(func() -> Mesh: return RoadMeshes.variants()[v])
+	for theme: int in LandscapeMeshes.Landscape.values():
+		for v in RoadMeshes.VARIANT_COUNT:
+			jobs.append(func() -> Mesh: return RoadMeshes.build_variant(theme as LandscapeMeshes.Landscape, v))
+	for id: StringName in LandmarkMeshes.IDS:
+		jobs.append(func() -> Mesh: return LandmarkMeshes.get_mesh(id))
 
 	for kind: int in VehicleCatalog.Kind.values():
 		for v in VehicleMeshes.variant_count(kind):
@@ -113,6 +115,7 @@ static func _catalog() -> Array[Callable]:
 	jobs.append(func() -> Mesh: return HighBeamVisuals.beam())
 	jobs.append(func() -> Mesh: return HighBeamVisuals.low_beam())
 	jobs.append(func() -> Mesh: return HighBeamVisuals.low_flare())
+	jobs.append(func() -> Mesh: return HighBeamVisuals.marker_flare())
 	jobs.append(func() -> Mesh: return Precipitation.rain_mesh())
 	jobs.append(func() -> Mesh: return Precipitation.snow_mesh())
 	jobs.append(func() -> Mesh: return RoadMeshes.night_pools())

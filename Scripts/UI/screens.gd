@@ -45,6 +45,7 @@ var _leaderboard_button: Button
 var _missions: MissionsPanel
 var _missions_button: Button
 var _title_crumbs: Label
+var _title_start: Label
 var _over_crumbs: Label
 var _over_mission: Label
 var _settings_button: Button
@@ -80,10 +81,12 @@ func _ready() -> void:
 
 
 ## daily_info: riga sotto il pulsante della sfida giornaliera (tratta di partenza e record del giorno).
-func show_title(best: int, daily_info: String) -> void:
+## start_info: da dove parte "PLAY" ("From Zurich → Walensee"), scritto sotto il pulsante.
+func show_title(best: int, daily_info: String, start_info: String = "") -> void:
 	hide_all()
 	_title_best.text = "Best: %s" % UiFormat.number(best) if best > 0 else ""
 	_title_daily.text = daily_info
+	_title_start.text = start_info
 	_title.visible = true
 	_play_button.grab_focus()
 
@@ -140,7 +143,7 @@ func _on_settings_closed() -> void:
 ## Tasto indietro di Android: chiude classifica o impostazioni. false = nessun pannello da chiudere.
 func close_panel() -> bool:
 	if settings.visible:
-		settings.close()
+		settings.close_top()
 		return true
 	if _missions.visible:
 		_missions.close()
@@ -287,6 +290,8 @@ func _build_title() -> void:
 	_play_button = UiStyle.make_button("PLAY")
 	_play_button.pressed.connect(func() -> void: start_pressed.emit())
 	box.add_child(_centered(_play_button))
+	_title_start = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_title_start)
 
 	var records := HBoxContainer.new()
 	records.alignment = BoxContainer.ALIGNMENT_CENTER

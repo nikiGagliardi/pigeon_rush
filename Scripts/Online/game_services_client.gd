@@ -109,8 +109,8 @@ func begin_run(setup: RunSetup) -> void:
 	_run_generation += 1
 	var generation := _run_generation
 	_ticket_id = ""
-	if not enabled:
-		return
+	if not enabled or not DevTuning.is_default():
+		return # con la difficoltà modificata dal pannello DEVELOPER la partita resta fuori classifica
 	_ticket_pending = true
 	if not is_inside_tree():
 		await ready

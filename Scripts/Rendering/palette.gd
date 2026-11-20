@@ -30,6 +30,8 @@ const HEADLIGHT := Color("fff6d5")
 const TAILLIGHT := Color("ff2a2a")
 const INDICATOR := Color("ffe600") # giallo: si distingue dai fari bianchi
 const DESTINATION_DISPLAY := Color("ffb020")
+## Luci di ingombro dei mezzi pesanti (arancio, come le vere luci di posizione laterali).
+const MARKER_LIGHT := Color("ff9a1f")
 const CHROME := Color("c8d0d8")
 const SEAT := Color("5a1f1f")
 

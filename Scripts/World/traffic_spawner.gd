@@ -678,7 +678,7 @@ func _pick_kind(difficulty: float) -> Kind:
 
 func _row_spacing(session: GameSession) -> float:
 	var spacing := lerpf(46.0, 30.0, session.difficulty) + session.speed.approach_speed * 0.15 + _rng_rows.randf_range(-4.0, 6.0)
-	var density := _segment.traffic * (1.0 + GameConfig.LAP_TRAFFIC_BONUS * (_lap - 1))
+	var density := _segment.traffic * DevTuning.traffic_multiplier() * (1.0 + GameConfig.LAP_TRAFFIC_BONUS * (_lap - 1))
 	return spacing / maxf(0.5, density)
 
 

@@ -32,6 +32,10 @@ class Surface:
 
 static var _shape_cache: Dictionary[int, ShapeData] = {}
 
+## Trasformazione applicata a tutte le forme aggiunte dopo: per costruire un oggetto (casa, mucca…) nelle sue
+## coordinate e poi posarlo e ruotarlo in un colpo solo. Rimetterla a IDENTITY alla fine.
+var origin := Transform3D.IDENTITY
+
 var _lit := Surface.new()
 var _unlit := Surface.new()
 
@@ -97,6 +101,8 @@ func _add_shape(shape: ShapeData, transform: Transform3D, color: Color, unlit: b
 	var count := shape.vertices.size()
 	if count == 0:
 		return self
+	if origin != Transform3D.IDENTITY:
+		transform = origin * transform
 	# Le normali di faccia si trasformano con l'inversa trasposta: restano perpendicolari
 	# anche con scale non uniformi e mantengono il verso (scale positive).
 	var basis := transform.basis

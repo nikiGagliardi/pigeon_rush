@@ -14,6 +14,10 @@ enum Sfx {
 	THUNDER,
 }
 
+## Pioggia al massimo (prima 0.8: copriva tutto il resto).
+const RAIN_LEVEL := 0.4
+## Vento con la neve piena.
+const SNOW_WIND_MUFFLE := 0.6
 const WORLD_BUS := &"World"
 const AMBIENCE_BUS := &"Ambience"
 const UI_BUS := &"UI"
@@ -95,6 +99,9 @@ var _tunnel: AudioStreamPlayer
 var _rain: AudioStreamPlayer
 var _rain_level: float = 0.0
 var _rain_target: float = 0.0
+## Con la neve il vento si attutisce (1 = normale).
+var _wind_muffle: float = 1.0
+var _wind_muffle_target: float = 1.0
 var _thunder_timer: float = 8.0
 var _thunder_allowed: bool = false
 var _rng := RandomNumberGenerator.new()
@@ -262,10 +269,12 @@ func set_ambience(road: float, wind: float, wind_pitch: float, tunnel: float) ->
 	_set_reverb(tunnel > 0.3)
 
 
-## Pioggia (0..1): loop attutito in galleria, tuoni ogni 10-24 s solo all'aperto e durante il volo.
-func set_weather(rain: float, tunnel_darkness: float, flying: bool) -> void:
-	_rain_target = clampf(rain, 0.0, 1.0) * lerpf(0.8, 0.15, tunnel_darkness)
+## Pioggia (0..1): loop di sottofondo (sotto la strada e il vento), attutito in galleria; tuoni ogni 10-24 s
+## solo all'aperto e durante il volo. Neve (0..1): niente pioggia, vento più ovattato.
+func set_weather(rain: float, snow: float, tunnel_darkness: float, flying: bool) -> void:
+	_rain_target = clampf(rain, 0.0, 1.0) * lerpf(RAIN_LEVEL, RAIN_LEVEL * 0.2, tunnel_darkness)
 	_thunder_allowed = rain > 0.5 and flying and tunnel_darkness < 0.5
+	_wind_muffle_target = lerpf(1.0, SNOW_WIND_MUFFLE, clampf(snow, 0.0, 1.0) * (1.0 - tunnel_darkness))
 
 
 func _tick_thunder(dt: float) -> void:
@@ -275,7 +284,7 @@ func _tick_thunder(dt: float) -> void:
 	if _thunder_timer > 0.0:
 		return
 	_thunder_timer = _rng.randf_range(10.0, 24.0)
-	play(Sfx.THUNDER, _rng.randf_range(-8.0, 0.0), _rng.randf_range(0.8, 1.1))
+	play(Sfx.THUNDER, _rng.randf_range(-12.0, -4.0), _rng.randf_range(0.8, 1.1))
 
 
 func _tick_pending(dt: float) -> void:
@@ -309,10 +318,11 @@ func _tick_ambience(dt: float) -> void:
 	_tunnel_level = move_toward(_tunnel_level, _tunnel_target, dt * 1.5)
 	_wind_pitch = move_toward(_wind_pitch, _wind_pitch_target, dt * 0.5)
 	_rain_level = move_toward(_rain_level, _rain_target, dt * 0.4)
+	_wind_muffle = move_toward(_wind_muffle, _wind_muffle_target, dt * 0.3)
 	_apply_loop(_rain, _rain_level, 1.0)
 	_tick_thunder(dt)
 	_apply_loop(_road, _road_level, 1.0)
-	_apply_loop(_wind, _wind_level, _wind_pitch)
+	_apply_loop(_wind, _wind_level * _wind_muffle, _wind_pitch)
 	_apply_loop(_tunnel, _tunnel_level, 1.0)
 
 

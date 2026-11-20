@@ -12,9 +12,10 @@ var elapsed: float = 0.0
 var is_over: bool = false
 
 ## Cresce con i metri percorsi (non col tempo): stessa distanza = stesso percorso, a qualsiasi velocità.
+## Con i valori di default: circa 14% a 1 km, 42% a 4 km, 57% a 6 km (Mittelland), 71% a Zurigo, 100% a 12 km.
 var difficulty: float:
 	get:
-		return clampf(score.distance / GameConfig.DIFFICULTY_RAMP_DISTANCE, 0.0, 1.0)
+		return DevTuning.difficulty_at(score.distance)
 
 
 func begin(p_setup: RunSetup) -> void:

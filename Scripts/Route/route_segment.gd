@@ -29,6 +29,14 @@ var tunnel_names: PackedStringArray = PackedStringArray(["Tunnel"])
 ## Meteo possibili (Fase 4): uno viene scelto a caso dal seed della partita, per tratta e per giro.
 var weathers: PackedStringArray = PackedStringArray(["sun"])
 
+## Paesaggi in sequenza: fino a landscape_until[i] (0..1 della tratta) c'è landscape_themes[i].
+var landscape_until: PackedFloat32Array = PackedFloat32Array([1.0])
+var landscape_themes: Array[LandscapeMeshes.Landscape] = [LandscapeMeshes.Landscape.ALPINE]
+
+## Luogo tipico (LandmarkMeshes) e punto della tratta (0..1) in cui lo si affianca. Vuoto = nessuno.
+var landmark: StringName = &""
+var landmark_at: float = 0.5
+
 
 static func make(p_id: StringName, p_name: String, p_region: String, p_canton: String, p_length: float) -> RouteSegment:
 	var segment := RouteSegment.new()
@@ -62,3 +70,27 @@ func with_tunnels(names: Array[String]) -> RouteSegment:
 func with_weathers(list: Array[String]) -> RouteSegment:
 	weathers = PackedStringArray(list)
 	return self
+
+
+## stages: coppie [fino_a, tema], es. [[0.65, Landscape.TICINO], [1.0, Landscape.TOWN]].
+func with_landscape(stages: Array) -> RouteSegment:
+	landscape_until = PackedFloat32Array()
+	landscape_themes.clear()
+	for stage: Array in stages:
+		landscape_until.append(float(stage[0]))
+		landscape_themes.append(stage[1] as LandscapeMeshes.Landscape)
+	return self
+
+
+func with_landmark(p_landmark: StringName, at: float) -> RouteSegment:
+	landmark = p_landmark
+	landmark_at = at
+	return self
+
+
+## Paesaggio a un punto della tratta (0..1).
+func landscape_at(progress: float) -> LandscapeMeshes.Landscape:
+	for i in landscape_until.size():
+		if progress <= landscape_until[i]:
+			return landscape_themes[i]
+	return landscape_themes[landscape_themes.size() - 1]

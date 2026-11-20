@@ -1,10 +1,10 @@
 class_name RoadMeshes
 extends RefCounted
 ## Segmento di autostrada lungo GameConfig.SEGMENT_LENGTH: la nostra carreggiata (3 corsie),
-## spartitraffico New Jersey con lampioni, carreggiata opposta, guardrail e vegetazione.
-## Più varianti generate con seed diversi per evitare ripetizioni evidenti.
+## spartitraffico New Jersey con lampioni, carreggiata opposta, guardrail e il paesaggio della zona
+## (LandscapeMeshes). Per ogni paesaggio più varianti con seed diversi, per evitare ripetizioni evidenti.
 
-const VARIANT_COUNT := 5
+const VARIANT_COUNT := 4
 const CARRIAGEWAY_WIDTH := GameConfig.ROAD_HALF_WIDTH * 2.0 + 2.4 # corsie + banchine
 # Guida a destra: i mezzi contromano (verso +Z) hanno lo spartitraffico alla loro sinistra (+X),
 # la carreggiata opposta (traffico verso -Z) sta quindi sul lato +X.
@@ -25,20 +25,30 @@ const LAMP_FLARE_COLOR := Color(1.0, 0.86, 0.6) * 0.9
 const LIGHT_FADE_NEAR := 110.0
 const LIGHT_FADE_FAR := 230.0
 
-static var _variants: Array[ArrayMesh] = []
+static var _built: Dictionary[int, ArrayMesh] = {} # tema * 100 + variante
 static var _pools: ArrayMesh
 static var _pool_material: StandardMaterial3D
 static var _lamp_flare: QuadMesh
 
 
-static func variants() -> Array[ArrayMesh]:
-	if _variants.is_empty():
-		for i in VARIANT_COUNT:
-			_variants.append(_build(1234 + i * 97))
-	return _variants
+static func variants(theme: LandscapeMeshes.Landscape) -> Array[ArrayMesh]:
+	var list: Array[ArrayMesh] = []
+	for i in VARIANT_COUNT:
+		list.append(build_variant(theme, i))
+	return list
 
 
-static func _build(seed_value: int) -> ArrayMesh:
+## Una variante (in cache): AssetWarmup le prepara una per volta durante il menu.
+static func build_variant(theme: LandscapeMeshes.Landscape, index: int) -> ArrayMesh:
+	var key := theme * 100 + index
+	var mesh: ArrayMesh = _built.get(key)
+	if mesh == null:
+		mesh = _build(1234 + index * 97 + theme * 7919, theme)
+		_built[key] = mesh
+	return mesh
+
+
+static func _build(seed_value: int, theme: LandscapeMeshes.Landscape) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var b := LowPolyBuilder.new()
@@ -72,14 +82,8 @@ static func _build(seed_value: int) -> ArrayMesh:
 	_add_lane_markings(b, OPPOSITE_CENTER_X)
 	b.box(Vector3(0.1, 0.32, length), Vector3(OPPOSITE_CENTER_X + 7.0, 0.62, 0.0), Palette.METAL)
 
-	# --- vegetazione e dettagli ---
-	_add_trees(b, rng, -9.5, -55.0, rng.randi_range(6, 10), half)
-	_add_trees(b, rng, 24.0, 75.0, rng.randi_range(6, 10), half)
-
-	if rng.randf() < 0.45:
-		var house_x := -32.0 - rng.randf() * 15.0 if rng.randf() < 0.5 else 40.0 + rng.randf() * 20.0
-		_add_house(b, rng, house_x, half)
-
+	# --- paesaggio della zona ---
+	LandscapeMeshes.add(b, rng, theme, half)
 	return b.build()
 
 
@@ -98,38 +102,6 @@ static func _add_lane_markings(b: LowPolyBuilder, center_x: float) -> void:
 			b.box(Vector3(0.14, 0.03, 4.5), Vector3(x, 0.015, z), Palette.LINE_WHITE)
 			z += 10.0
 
-
-static func _add_trees(b: LowPolyBuilder, rng: RandomNumberGenerator, near_x: float, far_x: float, count: int, half: float) -> void:
-	for i in count:
-		var x := near_x + (far_x - near_x) * rng.randf()
-		var z := -half + rng.randf() * half * 2.0
-		var roll := rng.randf()
-		if roll < 0.55:
-			# abete
-			var h := 3.5 + rng.randf() * 3.0
-			var r := 1.1 + rng.randf() * 0.8
-			b.cylinder(0.15, 0.2, 1.2, Vector3(x, 0.6, z), Palette.TRUNK, 5)
-			b.cone(r, h, Vector3(x, 1.0, z), Palette.TREE_DARK if rng.randf() < 0.5 else Palette.TREE_MID)
-			b.cone(r * 0.7, h * 0.6, Vector3(x, 1.0 + h * 0.45, z), Palette.TREE_MID)
-		elif roll < 0.85:
-			# latifoglia
-			var r := 1.3 + rng.randf() * 0.9
-			b.cylinder(0.18, 0.24, 1.8, Vector3(x, 0.9, z), Palette.TRUNK, 5)
-			b.sphere(r, Vector3(x, 1.8 + r * 0.8, z), Vector3(1.0, 0.9, 1.0), Palette.TREE_LIGHT, 6, 4)
-		else:
-			# roccia
-			var r := 0.6 + rng.randf() * 1.2
-			b.sphere(r, Vector3(x, r * 0.3, z), Vector3(1.3, 0.7, 1.0), Palette.ROCK, 5, 3, Vector3(0.0, rng.randf() * 90.0, 0.0))
-
-
-static func _add_house(b: LowPolyBuilder, rng: RandomNumberGenerator, x: float, half: float) -> void:
-	var z := -half * 0.5 + rng.randf() * half
-	var walls := Color("efe6d2") if rng.randf() < 0.5 else Color("e8d9b5")
-	var roof := Color("8e3b2e") if rng.randf() < 0.5 else Color("5b5f66")
-	b.box(Vector3(7.0, 4.0, 9.0), Vector3(x, 2.0, z), walls)
-	b.prism(Vector3(7.6, 2.6, 9.6), Vector3(x, 5.3, z), roof)
-	b.box(Vector3(1.2, 1.2, 0.1), Vector3(x - 1.8, 2.4, z + 4.52), Palette.GLASS)
-	b.box(Vector3(1.2, 1.2, 0.1), Vector3(x + 1.8, 2.4, z + 4.52), Palette.GLASS)
 
 
 ## X delle due lampade del lampione (nostra carreggiata, carreggiata opposta).

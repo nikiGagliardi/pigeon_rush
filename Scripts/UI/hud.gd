@@ -9,6 +9,8 @@ const FONT_COLOR := &"font_color"
 var _score: Label
 var _distance: Label
 var _best: Label
+## Riga del pannello DEVELOPER: difficoltà e traffico in tempo reale.
+var _dev: Label
 var _combo: Label
 var _speed: Label
 var _lock: Label
@@ -63,6 +65,9 @@ func _ready() -> void:
 	left.add_child(_score)
 	left.add_child(_distance)
 	left.add_child(_best)
+	_dev = UiStyle.make_label("", 18, Color("7fdcff"))
+	_dev.visible = false
+	left.add_child(_dev)
 	add_child(left)
 	left.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, 22)
 
@@ -210,6 +215,12 @@ func refresh(dt: float, session: GameSession, locked: bool, low_flying: bool) ->
 
 	_fade_to(_lock, 1.0 if locked and session.ammo > 0 else 0.0, dt)
 	_fade_to(_low_fly, 1.0 if low_flying else 0.0, dt)
+
+	_dev.visible = DevTuning.show_overlay
+	if _dev.visible:
+		var segment := session.route.segment
+		_dev.text = "DIFF %d%%  •  TRAFFIC x%.2f (segment x%.2f)  •  %s" % [roundi(session.difficulty * 100.0),
+			DevTuning.traffic_multiplier() * segment.traffic, segment.traffic, segment.id]
 
 	_refresh_route(session.route)
 	_tick_banner(dt)

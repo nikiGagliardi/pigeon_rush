@@ -14,6 +14,13 @@ static var CABRIO_COLORS: Array[Color] = [Color("e74c3c"), Color("f1c40f"), Colo
 static var BUS_COLORS: Array[Color] = [Color("f5c400"), Color("f2f2ee"), Color("c0392b")]
 static var BUS_STRIPE_COLORS: Array[Color] = [Color("c0392b"), Color("2e86de"), Color("f2f2ee")]
 
+## Display della destinazione del bus: largo e in alto, si riconosce anche di notte.
+const BUS_DISPLAY_SIZE := Vector2(2.0, 0.34)
+const BUS_DISPLAY_Y := 3.12
+## truck_marker_positions(): prima la barra sul tetto, poi i 2 angoli del rimorchio, poi le luci laterali.
+const TRUCK_ROOF_MARKERS := 5
+const TRUCK_FRONT_MARKERS := 7
+
 static var _cache: Dictionary[int, ArrayMesh] = {}
 static var _splat: ArrayMesh
 
@@ -138,6 +145,11 @@ static func _build_truck(cab: Color, stripe: Color) -> ArrayMesh:
 	b.box(Vector3(w * 0.8, 0.4, l - 0.4), Vector3(0.0, 0.75, 0.0), Palette.TRIM) # telaio
 	b.box(Vector3(0.06, 2.8, 0.04), Vector3(0.0, 2.5, -l * 0.5 - 0.02), Palette.CONCRETE_DARK) # porte posteriori
 	_add_taillights(b, 1.0, 1.1, -l * 0.5)
+	var markers := truck_marker_positions()
+	for i in markers.size():
+		var side_lamp := i >= TRUCK_FRONT_MARKERS
+		var color := Palette.HEADLIGHT if i >= TRUCK_ROOF_MARKERS and not side_lamp else Palette.MARKER_LIGHT
+		b.box(Vector3(0.06, 0.12, 0.22) if side_lamp else Vector3(0.22, 0.12, 0.08), markers[i], color, Vector3.ZERO, true)
 
 	var r := 0.5
 	var wx := w * 0.5 - 0.15
@@ -179,7 +191,9 @@ static func _build_bus(body: Color, stripe: Color) -> ArrayMesh:
 	b.box(Vector3(w + 0.02, 0.95, l - 2.6), Vector3(0.0, 2.6, -0.5), Palette.GLASS) # finestrini laterali
 	b.box(Vector3(w + 0.02, 0.28, l + 0.04), Vector3(0.0, 1.45, 0.0), stripe) # fascia (sporge: niente z-fighting)
 	b.box(Vector3(w * 0.92, 1.35, 0.06), Vector3(0.0, 2.35, l * 0.5 + 0.01), Palette.GLASS) # parabrezza
-	b.box(Vector3(1.5, 0.22, 0.05), Vector3(0.0, 3.17, l * 0.5 + 0.02), Palette.DESTINATION_DISPLAY, Vector3.ZERO, true) # display destinazione
+	b.box(Vector3(BUS_DISPLAY_SIZE.x, BUS_DISPLAY_SIZE.y, 0.05), Vector3(0.0, BUS_DISPLAY_Y, l * 0.5 + 0.02), Palette.DESTINATION_DISPLAY, Vector3.ZERO, true) # display destinazione
+	for p: Vector3 in bus_marker_positions():
+		b.box(Vector3(0.18, 0.1, 0.08), p, Palette.MARKER_LIGHT, Vector3.ZERO, true) # luci di ingombro in alto
 	b.box(Vector3(1.5, 0.22, 2.6), Vector3(0.0, 3.46, -1.5), Palette.CHROME) # clima sul tetto
 	b.box(Vector3(w * 1.02, 0.3, 0.22), Vector3(0.0, 0.6, l * 0.5), Palette.TRIM) # paraurti
 	b.box(Vector3(0.42, 0.16, 0.06), Vector3(-spec.headlight_x, spec.headlight_y, l * 0.5 + 0.03), Palette.HEADLIGHT, Vector3.ZERO, true)
@@ -194,6 +208,33 @@ static func _build_bus(body: Color, stripe: Color) -> ArrayMesh:
 		b.wheel(wx, z, r, 0.36)
 
 	return b.build()
+
+
+## Luci di ingombro del camion (coordinate del mezzo): barra di 5 luci sopra la cabina,
+## angoli alti davanti al rimorchio (bianchi, sopra la cabina) e 4 luci per lato lungo il bordo alto del rimorchio.
+## Di notte e con la pioggia disegnano la sagoma: alta e lunga, non un'auto.
+static func truck_marker_positions() -> PackedVector3Array:
+	var spec := VehicleCatalog.TRUCK
+	var l := spec.length
+	var w := spec.width
+	var out := PackedVector3Array()
+	for i in TRUCK_ROOF_MARKERS:
+		out.append(Vector3(lerpf(-0.9, 0.9, i / 4.0), 3.92, l * 0.5 - 0.85)) # sul bordo anteriore dello spoiler
+	var trailer_length := l - 2.4 - 0.3
+	var trailer_front := -l * 0.5 + trailer_length
+	out.append(Vector3(-w * 0.5 + 0.12, 3.92, trailer_front + 0.03))
+	out.append(Vector3(w * 0.5 - 0.12, 3.92, trailer_front + 0.03))
+	for side: float in [-1.0, 1.0]:
+		for i in 4:
+			out.append(Vector3(side * (w * 0.5 + 0.02), 3.85, trailer_front - 0.8 - i * (trailer_length - 1.4) / 3.0))
+	return out
+
+
+## Luci di ingombro del bus: due agli angoli alti davanti, accanto al display.
+static func bus_marker_positions() -> PackedVector3Array:
+	var spec := VehicleCatalog.BUS
+	var x := spec.width * 0.5 - 0.15
+	return PackedVector3Array([Vector3(-x, 3.38, spec.length * 0.5 + 0.02), Vector3(x, 3.38, spec.length * 0.5 + 0.02)])
 
 
 ## Fanalini rossi sul retro (visibili sulla carreggiata opposta).

@@ -16,6 +16,8 @@ const TITLE_WORLD_SPEED := GameConfig.BASE_PIGEON_SPEED * 0.6
 ## Dopo "Try again" la scena viene ricaricata: salta il titolo e riparte con questa partita.
 static var _skip_title_on_load: bool = false
 static var _next_setup: RunSetup = null
+## Partita che parte con "PLAY": estratta quando compare il titolo, che mostra da dove si parte.
+var _title_setup: RunSetup = null
 ## Prova automatica senza interfaccia: godot --headless --path . -- --smoke-test
 static var _smoke_runs: int = 0
 static var _smoke_checked: bool = false
@@ -34,6 +36,7 @@ var _precipitation: Precipitation
 var _pigeon: PigeonController
 var _camera: ChaseCamera
 var _road: RoadScroller
+var _landmarks: LandmarkSpawner
 var _traffic: TrafficSpawner
 var _ambient: AmbientTraffic
 var _poop: PoopSystem
@@ -75,6 +78,7 @@ var _smoke_test: bool = false
 var _smoke_time: float = 0.0
 var _smoke_hits: int = 0
 var _smoke_shots: bool = false
+static var _smoke_start: int = 0
 var _next_shot: float = 3.0
 var _smoke_survive_time: float = SMOKE_SURVIVE_TIME
 var _shot_key: String = ""
@@ -98,6 +102,8 @@ func _ready() -> void:
 	Ads.ensure(get_tree())
 	# mai nelle build di release: la prova automatica ignora gli impatti
 	_smoke_test = OS.is_debug_build() and OS.get_cmdline_user_args().has("--smoke-test")
+	if _smoke_test:
+		DevTuning.use_defaults() # la prova automatica ignora i valori del pannello DEVELOPER
 	_smoke_shots = OS.get_cmdline_user_args().has("--shots")
 	for arg in OS.get_cmdline_user_args():
 		# prova di meteo e ora (solo debug): -- --time=night --weather=fog
@@ -105,6 +111,8 @@ func _ready() -> void:
 			RouteTracker.debug_time = arg.trim_prefix("--time=")
 		if OS.is_debug_build() and arg.begins_with("--weather="):
 			RouteTracker.debug_weather = arg.trim_prefix("--weather=")
+		if OS.is_debug_build() and arg.begins_with("--start="):
+			_smoke_start = arg.trim_prefix("--start=").to_int() # prova automatica da un'altra tratta (paesaggi)
 		if arg.begins_with("--survive="):
 			_smoke_survive_time = arg.trim_prefix("--survive=").to_float() # partite più brevi per le schermate
 	if _smoke_test and not _smoke_checked:
@@ -128,6 +136,8 @@ func _ready() -> void:
 
 	_road = RoadScroller.new()
 	add_child(_road)
+	_landmarks = LandmarkSpawner.new()
+	add_child(_landmarks)
 
 	_traffic = TrafficSpawner.new()
 	add_child(_traffic)
@@ -177,7 +187,7 @@ func _ready() -> void:
 
 	_hud.set_best(_save.best_score)
 	_hud.pause_pressed.connect(_pause)
-	_screens.start_pressed.connect(func() -> void: _start_game(RunSetup.normal()))
+	_screens.start_pressed.connect(func() -> void: _start_game(_title_setup))
 	_screens.daily_pressed.connect(func() -> void: _start_game(RunSetup.daily()))
 	_screens.resume_pressed.connect(_resume)
 	_screens.restart_pressed.connect(_restart)
@@ -200,14 +210,19 @@ func _ready() -> void:
 
 	if _skip_title_on_load or _smoke_test:
 		_skip_title_on_load = false
-		var setup := _next_setup if _next_setup != null else RunSetup.normal()
+		var setup := _next_setup if _next_setup != null else RunSetup.normal(_save.runs_played)
 		if _smoke_test:
-			setup = RunSetup.daily() if _smoke_runs == 1 else RunSetup.normal() # la seconda prova è la sfida giornaliera
+			# la prima prova parte da Roveredo (controlli sui cartelli), la seconda è la sfida giornaliera
+			setup = RunSetup.daily() if _smoke_runs == 1 else RunSetup.normal(0)
+			if _smoke_runs == 0:
+				setup.start_segment = _smoke_start
 		_next_setup = null
 		_start_game(setup)
 	else:
 		_hud.visible = false
-		_screens.show_title(_save.best_score, _daily_info())
+		_title_setup = RunSetup.normal(_save.runs_played)
+		_show_route_scenery(RouteTracker.new(_title_setup.seed, _title_setup.start_segment))
+		_screens.show_title(_save.best_score, _daily_info(), "From %s" % RouteData.get_segment(_title_setup.start_segment).name)
 		_refresh_title_online(online)
 
 
@@ -377,7 +392,7 @@ func _tick_playing(dt: float) -> void:
 	_pigeon.tick(dt, input, 10.0 + speed.boost_normalized * 8.0, limits.x, limits.y)
 	_play_flap_on_climb(input.y)
 
-	_road.advance(ground_step)
+	_advance_world(ground_step)
 	_traffic.tick(dt, ground_step, traffic_step, _session)
 	_ambient.tick(dt, speed.pigeon_speed)
 
@@ -399,11 +414,29 @@ func _tick_playing(dt: float) -> void:
 	_session.score.tick(dt, ground_step, speed.multiplier * bonus, _pigeon.position.y < GameConfig.LOW_FLY_HEIGHT,
 		route.conditions.time_of_day == "night")
 	route.update(_session.score.distance)
+	_follow_route_scenery(route)
+
+
+## Strada e luoghi tipici scorrono insieme.
+func _advance_world(step: float) -> void:
+	_road.advance(step)
+	_landmarks.advance(step)
+
+
+## Paesaggio dei segmenti che ricompaiono in fondo e luogo tipico della tratta.
+func _follow_route_scenery(route: RouteTracker) -> void:
+	_road.theme = route.landscape_ahead(RoadScroller.RECYCLE_AHEAD)
+	_landmarks.update(route)
+
+
+## Tutta la strada visibile con il paesaggio del percorso (titolo, inizio partita).
+func _show_route_scenery(route: RouteTracker) -> void:
+	_road.retheme(route.landscape_ahead)
 
 
 func _tick_ambient(dt: float) -> void:
 	var ground_step := TITLE_WORLD_SPEED * dt
-	_road.advance(ground_step)
+	_advance_world(ground_step)
 	_traffic.tick(dt, ground_step, ground_step, _session)
 	_ambient.tick(dt, TITLE_WORLD_SPEED)
 
@@ -417,7 +450,7 @@ func _tick_countdown(dt: float) -> void:
 	_input_delay = maxf(0.0, _input_delay - dt)
 
 	var step := _countdown_world_speed * dt
-	_road.advance(step)
+	_advance_world(step)
 	_traffic.tick(dt, step, step, _session)
 	_ambient.tick(dt, _countdown_world_speed)
 
@@ -479,8 +512,9 @@ func _tick_wreck(dt: float) -> void:
 	var ground_step := speed.pigeon_speed * dt
 	var traffic_step := speed.approach_speed * dt
 
-	_road.advance(ground_step)
+	_advance_world(ground_step)
 	_session.route.shift(ground_step) # cartello della tratta e confini scorrono con la strada
+	_follow_route_scenery(_session.route)
 	_traffic.tick(dt, ground_step, traffic_step, _session)
 	_ambient.tick(dt, speed.pigeon_speed)
 	_poop.tick(dt, ground_step, traffic_step, _traffic.vehicles)
@@ -555,7 +589,8 @@ func _update_atmosphere(dt: float) -> void:
 			_precipitation.world_speed = _countdown_world_speed
 		_:
 			_precipitation.world_speed = _session.speed.pigeon_speed
-	_audio.set_weather(_precipitation_level(), _traffic.tunnel_darkness, _state == GameState.PLAYING)
+	_audio.set_weather(_precipitation_level(), 1.0 if _atmosphere.conditions.weather == "snow" else 0.0,
+		_traffic.tunnel_darkness, _state == GameState.PLAYING)
 
 
 ## Intensità della pioggia per l'audio (0..1).
@@ -673,6 +708,10 @@ func _start_game(setup: RunSetup) -> void:
 
 	_session.begin(setup)
 	_session.route.segment_entered.connect(_on_segment_entered)
+	if _title_setup == null or setup != _title_setup:
+		_show_route_scenery(_session.route) # nel titolo c'era già il paesaggio di questa partenza
+	_landmarks.clear() # nel titolo il mondo scorre senza percorso: il luogo tipico compare da qui
+	_landmarks.update(_session.route)
 	_traffic.begin_segment(_session.route)
 	_atmosphere.transition_to(_session.route.conditions, 2.5)
 	_hud.set_conditions(_session.route.conditions.bonus_label())
@@ -777,7 +816,7 @@ func _resume() -> void:
 func _restart() -> void:
 	get_tree().paused = false
 	_skip_title_on_load = true
-	_next_setup = _session.setup.retry() # la normale con un seed nuovo, la giornaliera uguale
+	_next_setup = _session.setup.retry(_save.runs_played) # la normale con seed e partenza nuovi, la giornaliera uguale
 	get_tree().reload_current_scene()
 
 

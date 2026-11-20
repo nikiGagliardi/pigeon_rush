@@ -59,7 +59,8 @@ const LOW_FLY_BONUS := 1.5
 
 # --- Difficoltà ---
 ## Metri per arrivare alla difficoltà massima (circa 150 s di volo).
-const DIFFICULTY_RAMP_DISTANCE := 4000.0
+# Curva della difficoltà (metri del massimo, esponente, minimo) e densità del traffico: in DevTuning,
+# regolabili dal pannello DEVELOPER delle impostazioni.
 const START_GRACE := 2.0
 
 # --- Ciclo di partita e Continua ---

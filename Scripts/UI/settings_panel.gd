@@ -1,6 +1,8 @@
 class_name SettingsPanel
 extends Control
 ## Impostazioni, dal titolo e dalla pausa: volume, vibrazione, suggerimenti, informativa privacy.
+## DEVELOPER (taratura della difficoltà): sempre nelle build di debug; in quelle di rilascio si sblocca
+## toccando 7 volte la versione in fondo.
 ## Le modifiche valgono subito (changed); il salvataggio su file lo fa Main alla chiusura.
 
 signal changed(volume: float, vibration: bool)
@@ -16,6 +18,11 @@ var _vibration: CheckButton
 var _tips_button: Button
 var _back_button: Button
 var _message: Label
+var _dev_button: Button
+var _dev_panel: DevPanel
+var _version_taps: int = 0
+## Taps che mancano allo sblocco del pannello DEVELOPER nelle build di rilascio.
+const UNLOCK_TAPS := 7
 ## Durante open() i controlli si impostano senza mandare changed.
 var _loading: bool = false
 
@@ -35,19 +42,32 @@ func open(volume: float, vibration: bool) -> void:
 	_refresh_labels()
 	_message.text = ""
 	_tips_button.disabled = false
+	_dev_button.visible = DevTuning.panel_available()
+	_dev_panel.visible = false
+	_version_taps = 0
 	visible = true
 	_back_button.grab_focus()
+
+
+## Tasto indietro di Android: prima il pannello DEVELOPER, poi le impostazioni.
+func close_top() -> void:
+	if _dev_panel.visible:
+		_dev_panel.close()
+	else:
+		close()
 
 
 func close() -> void:
 	if not visible:
 		return
+	if _dev_panel.visible:
+		_dev_panel.close()
 	visible = false
 	closed.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if visible and event.is_action_pressed(Actions.PAUSE):
+	if visible and not _dev_panel.visible and event.is_action_pressed(Actions.PAUSE):
 		get_viewport().set_input_as_handled()
 		close()
 
@@ -62,6 +82,30 @@ func _on_tips_pressed() -> void:
 	tips_reset.emit()
 	_tips_button.disabled = true
 	_message.text = "Tips will show again in your next run."
+
+
+func _on_version_input(event: InputEvent) -> void:
+	var tap := (event is InputEventMouseButton and (event as InputEventMouseButton).pressed) \
+		or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
+	if not tap or DevTuning.panel_available():
+		return
+	_version_taps += 1
+	var left := UNLOCK_TAPS - _version_taps
+	if left > 0 and left <= 3:
+		_message.text = "%d more taps for developer options" % left
+	elif left <= 0:
+		DevTuning.unlocked = true
+		DevTuning.save()
+		_dev_button.visible = true
+		_message.text = "Developer options unlocked"
+
+
+func _open_dev() -> void:
+	_dev_panel.open()
+
+
+func _on_dev_closed() -> void:
+	_dev_button.grab_focus()
 
 
 func _refresh_labels() -> void:
@@ -133,6 +177,11 @@ func _build() -> void:
 	privacy.pressed.connect(func() -> void: OS.shell_open(PRIVACY_URL))
 	box.add_child(_centered(privacy))
 
+	_dev_button = _wide_button("DEVELOPER")
+	_dev_button.add_theme_color_override("font_color", Color("1d4f66"))
+	_dev_button.pressed.connect(_open_dev)
+	box.add_child(_centered(_dev_button))
+
 	_message = UiStyle.make_label("", 20, DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_message)
 
@@ -140,8 +189,15 @@ func _build() -> void:
 	_back_button.pressed.connect(close)
 	box.add_child(_centered(_back_button))
 
-	box.add_child(UiStyle.make_label("Pigeon Rush v%s  •  Moesa Games" % GameServicesClient.game_version(), 16,
-		Color(1.0, 1.0, 1.0, 0.45), HORIZONTAL_ALIGNMENT_CENTER))
+	var version := UiStyle.make_label("Pigeon Rush v%s  •  Moesa Games" % GameServicesClient.game_version(), 16,
+		Color(1.0, 1.0, 1.0, 0.45), HORIZONTAL_ALIGNMENT_CENTER)
+	version.mouse_filter = Control.MOUSE_FILTER_STOP
+	version.gui_input.connect(_on_version_input)
+	box.add_child(version)
+
+	_dev_panel = DevPanel.new()
+	add_child(_dev_panel)
+	_dev_panel.closed.connect(_on_dev_closed)
 
 
 ## Riga "ETICHETTA  [controllo]": restituisce il contenitore a cui aggiungere i controlli.

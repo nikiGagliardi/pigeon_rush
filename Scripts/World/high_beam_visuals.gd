@@ -9,12 +9,15 @@ const LOW_BEAM_LENGTH := 11.0
 const LOW_BEAM_PITCH := 8.0
 const LOW_BEAM_COLOR := Color(0.16, 0.15, 0.12)
 const LOW_FLARE_COLOR := Color(0.55, 0.52, 0.45)
+## Bagliore delle luci di ingombro di camion e bus (arancio, acceso con gli anabbaglianti).
+const MARKER_FLARE_COLOR := Color(0.75, 0.42, 0.08)
 
 static var _flare: QuadMesh
 static var _beam: CylinderMesh
 static var _glow: GradientTexture2D
 static var _low_beam: CylinderMesh
 static var _low_flare: QuadMesh
+static var _marker_flare: QuadMesh
 
 
 static func flare() -> QuadMesh:
@@ -100,8 +103,25 @@ static func low_flare() -> QuadMesh:
 	return _low_flare
 
 
+## Quad 1×1 da scalare per luce (keep_scale: anche il display del bus, largo e basso).
+static func marker_flare() -> QuadMesh:
+	if _marker_flare == null:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.billboard_keep_scale = true
+		mat.albedo_color = MARKER_FLARE_COLOR
+		mat.albedo_texture = radial_glow()
+		_marker_flare = QuadMesh.new()
+		_marker_flare.size = Vector2.ONE
+		_marker_flare.material = mat
+	return _marker_flare
+
+
 ## Intensità degli anabbaglianti di tutti i mezzi (0..1): un solo materiale condiviso, nessun costo per mezzo.
 static func set_low_beam_level(level: float) -> void:
 	var k := clampf(level, 0.0, 1.0)
 	(low_beam().material as StandardMaterial3D).albedo_color = LOW_BEAM_COLOR * k
 	(low_flare().material as StandardMaterial3D).albedo_color = LOW_FLARE_COLOR * k
+	(marker_flare().material as StandardMaterial3D).albedo_color = MARKER_FLARE_COLOR * k

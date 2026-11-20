@@ -30,6 +30,7 @@ godot --headless --path . --fixed-fps 60 -- --smoke-test
 Opzioni (dopo `--`):
 - `--shots`, con un driver video (non `--headless`): salva in `user://` una schermata ogni 6 s e una per ogni stato (countdown, impatto, "Continue?", pubblicità, game over);
 - `--survive=20`: impatti ignorati solo per i primi 20 s, per partite più brevi;
+- `--start=5`: la prima partita della prova parte dalla tratta indicata (0 = Roveredo, 5 = Lucerna → Zurigo…), per vedere paesaggi e luoghi tipici con `--shots`;
 - `--no-ads`: simula la mancanza di pubblicità, quindi niente pannello "Continue?" (funziona anche giocando normalmente).
 - `--time=night` e/o `--weather=fog`: forzano ora (`day`, `sunset`, `night`) e meteo (`sun`, `cloudy`, `fog`, `rain`, `snow`) di tutte le tratte, anche giocando normalmente.
 - `--api=http://127.0.0.1:8099`: usa un server di prova invece di `api.moesagames.ch` (solo build di debug, anche giocando normalmente). Nella prova automatica il client online è spento se manca `--api`, così non tocca mai il server vero; con `--api` controlla anche che entrambe le partite ricevano ticket e risposta, che arrivi il saldo delle briciole d'oro e che una missione si possa riscuotere. Usa `user://online_smoke.json`, non l'account vero. Server finto: `python Tools/mock_api.py 8099` (rifiuta le partite senza le statistiche delle missioni).
@@ -62,21 +63,24 @@ Opzioni (dopo `--`):
   Se la pubblicità viene saltata non c'è premio e l'offerta riprende. "No thanks", Esc o la fine dell'anello portano al game over.
 - **Pubblicità a schermo intero:** può arrivare premendo "Try again", mai nelle prime 3 partite della sessione, al massimo una ogni 3 partite, almeno 90 s dopo qualsiasi altra pubblicità e mai dopo una partita in cui si è guardata quella a premio.
 - **Munizioni:** si parte con 6 cacche (max 10). Le **briciole** ne ricaricano 3. Il contatore sta in basso al centro (icone + `6/10`, rosso lampeggiante quando è vuoto) e, su touch, anche sul pulsante DROP.
+- **Luci dei mezzi pesanti:** con i fari accesi (notte, galleria, pioggia, nebbia, neve) i camion mostrano una barra di luci arancioni sopra la cabina, due luci bianche agli angoli alti del rimorchio e le luci di ingombro lungo i fianchi; i bus il display della destinazione illuminato e due luci in alto. Al buio si distinguono subito dalle auto, che hanno solo i fari.
 - **Abbaglianti:** se sei sulla traiettoria di un mezzo (stessa corsia, sotto il tetto) tra 15 e 85 m, ti lampeggia 2-3 volte. Lampeggia solo il primo mezzo della corsia: quelli dietro non ti vedono.
 - **Cambi di corsia:** ogni tanto un mezzo mette la freccia (1.5 s) e si sposta nella corsia accanto. È raro (ogni 200-300 m all'inizio, 120-220 m a difficoltà massima) e leale: parte solo da mezzi a 3.5-5.5 s dal piccione, solo se nella corsia di destinazione c'è spazio, mai verso una corsia chiusa da un cantiere e mai se chiuderebbe il varco minimo garantito.
 - **Gallerie (320-560 m):** soffitto a 5.6 m e ventilatori appesi, quindi niente volo alto. All'interno è buio: si vedono lampade, fari e abbaglianti. La camera si abbassa da sola prima del portale.
 - **Lavori:** chiudono la corsia sinistra o destra per 160-240 m. Le due estremità sono speculari (cartello, carrello con freccia, coni e rete in diagonale): una verso il piccione e una verso le auto, che sono quelle a cui serve davvero la chiusura. Un ponteggio con rete arancione alto 8 m (più del volo massimo) impedisce di passarci sopra: la strada si stringe davvero a due corsie, con tutto il traffico lì. La rete è un muro morbido (ti spinge, non ti uccide) e segue la diagonale dei coni. I carrelli con la freccia sono invece ostacoli veri: se sei nella corsia chiusa, spostati prima.
 - **Tratte:** si vola su un anello di 9 tratte (vedi "L'anello" più sotto). All'ingresso di ogni tratta c'è un **cartello verde a bordo strada** (oltre il guardrail esterno, solo scenografia) che si vede arrivare da lontano. Quando ci passi accanto compare anche il banner nell'HUD ("WELCOME TO TICINO", oppure il nome della zona) con un bonus di 500 × giro. In alto al centro ci sono il nome della tratta e la barra di avanzamento; il game over mostra fin dove si è arrivati ("Lap 1 · Leventina 62%").
+- **Partenza:** le prime 3 partite normali partono da Roveredo (tratte corte, primo cartello presto); dopo, da una tratta a caso dell'anello, tranne la galleria del Gottardo. Il titolo la mostra sotto "PLAY" ("From Zurich → Walensee"); "Try again" ne estrae una nuova.
 - **Giri:** ripassando dalla partenza inizia il giro successivo, con i punti distanza moltiplicati (×1.25 al secondo giro, ×1.5 al terzo…) e le file di traffico un po' più fitte.
 - **Sfida giornaliera:** dal titolo, "DAILY CHALLENGE". Ogni giorno (UTC) ha un seed e una tratta di partenza uguali per tutti, quindi lo stesso percorso e lo stesso meteo. Il record del giorno è separato da quello normale.
 - **Meteo e ora del giorno:** ogni tratta ha il suo meteo (sole, nuvoloso, nebbia, pioggia, neve, tra quelli possibili per quella tratta) e la sua ora (giorno 60%, tramonto 20%, notte 20%), estratti dal seed. La prima tratta della partita è sempre di giorno. Il cambio avviene all'ingresso della tratta: graduale in 5 s all'aperto, in 1 s se si è in galleria.
 - **Bonus di visibilità:** i punti distanza si moltiplicano per notte ×1.3, nebbia ×1.2, neve ×1.15, pioggia ×1.1 (cumulabili: notte con nebbia ×1.56). Il bonus attivo è scritto in oro sotto la barra della tratta.
 - **Suggerimenti delle prime partite:** compaiono sopra le munizioni nel momento in cui servono (comandi di volo, primo mirino, primo colpo, primo passaggio a filo, munizioni sotto 3, volo radente dopo 25 s), una volta sola ciascuno. "SHOW TIPS AGAIN" nelle impostazioni li fa ricomparire.
 - **Impostazioni** (dal titolo e dalla pausa): volume, vibrazione, suggerimenti, informativa privacy, versione del gioco.
+- **DEVELOPER** (nelle impostazioni, per tarare la difficoltà): metri a cui la difficoltà arriva al massimo, curva, difficoltà di partenza e moltiplicatore del traffico, con l'anteprima della curva e la riga "SHOW IN HUD" (difficoltà e traffico in tempo reale durante la partita). Sempre visibile nelle build di debug; in quelle di rilascio (test interno da Play) si sblocca toccando 7 volte la versione in fondo alle impostazioni. Valori salvati in `user://dev_tuning.json`; con valori diversi dai default le partite non chiedono il ticket, quindi restano fuori classifica (e non contano per briciole d'oro e missioni). La prova automatica usa sempre i default.
 - **Briciole d'oro:** la valuta del gioco. Ogni tanto compare una **briciola d'oro** (più grande, alone chiaro, due anelli; la prima dopo 250 m, poi una ogni 300-600 m) che vale +50 punti e 5 briciole d'oro. A fine partita il server accredita 1 briciola ogni 100 m più 5 per ogni briciola d'oro raccolta, al massimo 200 a partita e 1500 al giorno, e solo per le partite iniziate online. Il game over mostra "+33 GOLDEN CRUMBS  •  total 1,250", il titolo il saldo. Per ora si accumulano: il negozio arriverà più avanti.
 - **Missioni giornaliere:** dal titolo, "MISSIONS". Tre obiettivi al giorno uguali per tutti (per esempio "Splat 4 buses", "Fly 1500 m at night", "Fly today's challenge"), nuovi a mezzanotte UTC. Contano le partite iniziate online; il progresso lo calcola il server. Una missione completa si riscuote con "CLAIM" (30-90 briciole d'oro). Il pulsante del titolo mostra quante ce ne sono da riscuotere ("MISSIONS (1)") e il game over avvisa quando una partita ne completa una.
 - **Classifica mondiale:** nel game over la posizione ("WORLD #1,234  •  THIS WEEK #56"); "NEW WORLD RECORD!" quando la partita porta in testa alla classifica di sempre, "#1 IN TODAY'S CHALLENGE!" in quella del giorno.
-- **Difficoltà:** cresce con i metri percorsi (al massimo dopo 4 km), non col tempo. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
+- **Difficoltà:** cresce con i metri percorsi, non col tempo: in fretta all'inizio, poi più piano, fino al massimo verso la fine del primo giro (14% a 1 km, 57% all'ingresso nel Mittelland, 100% a 12 km). Il traffico più fitto del primo giro è nella discesa del San Bernardino. Dal secondo giro c'è in più il traffico extra dei giri. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
 
 ## Architettura
 
@@ -87,6 +91,7 @@ Scripts/
 ├── main.gd                  Regista: costruzione scena, stati di gioco (countdown, Continua), ordine di update, prova automatica
 ├── Core/
 │   ├── game_config.gd       Tutte le costanti di bilanciamento
+│   ├── dev_tuning.gd        Curva della difficoltà e traffico, regolabili dal pannello DEVELOPER
 │   ├── game_session.gd      Stato partita (munizioni, tempo, difficoltà, game over)
 │   ├── speed_controller.gd  Velocità base + boost cumulabili
 │   ├── score_service.gd     Punteggio, combo, statistiche
@@ -109,7 +114,7 @@ Scripts/
 │   ├── route_data.gd        Le 9 tratte dell'anello
 │   ├── route_tracker.gd     Tratta attuale, avanzamento, giro, seed derivati per tratta
 │   ├── track_conditions.gd  Meteo e ora del giorno di una tratta (dal seed) e bonus di punti
-│   └── run_setup.gd         Partita normale (seed casuale, da Roveredo) o sfida giornaliera (seed della data)
+│   └── run_setup.gd         Partita normale (seed e partenza casuali, le prime 3 da Roveredo) o sfida giornaliera (seed della data)
 ├── Rendering/
 │   ├── low_poly_builder.gd  Primitive → ArrayMesh flat-shaded con vertex color
 │   ├── asset_warmup.gd      Pre-costruzione mesh e pre-compilazione shader durante il menu
@@ -131,7 +136,9 @@ Scripts/
 │   ├── tunnel.gd / tunnel_meshes.gd          Gallerie a doppia canna (buio, soffitto, ventilatori)
 │   ├── road_works.gd / road_works_meshes.gd  Cantieri con corsia chiusa e macchinari
 │   ├── pickup.gd            Briciole (ricarica cacca) e briciole d'oro
-│   ├── road_scroller.gd / road_meshes.gd     Strada a segmenti riciclati
+│   ├── road_scroller.gd / road_meshes.gd     Strada a segmenti riciclati, con il paesaggio della zona
+│   ├── landscape_meshes.gd  Paesaggi a bordo strada (Ticino, Riviera, Alpi, Altopiano, Lago, Cittadina, Città)
+│   ├── landmark_meshes.gd / landmark_spawner.gd  Luoghi tipici, uno per tratta
 │   ├── structure_meshes.gd
 │   ├── atmosphere.gd        Preset di meteo × ora del giorno e transizioni (cielo, sole, nebbia, luce, montagne, strada bagnata, fari)
 │   └── scenery_factory.gd   Cielo, sole, nebbia, montagne
@@ -165,7 +172,7 @@ Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costan
 - **Solo mobile:** Android prima, iOS in un secondo momento. Tastiera e gamepad restano solo per sviluppare e provare su PC, senza versione PC pubblicata.
 - **Pubblico 13+:** niente programma Famiglie di Google Play. Grafica e testi restano coerenti con un pubblico di adolescenti e adulti.
 - **Volo continuo su un anello di tratte**, senza livelli: Roveredo → Bellinzona → Gottardo → Lucerna → Zurigo → Walensee → Coira → San Bernardino → Roveredo, poi si ricomincia. Il record si batte in un'unica corsa, e le tratte danno il senso di progresso.
-- **Partita normale sempre da Roveredo**, così i record sono confrontabili. La **sfida giornaliera** parte ogni giorno da una tratta diversa, così prima o poi tutti vedono tutto il percorso.
+- **Partita normale da una tratta a caso** (le prime 3 da Roveredo): con partite da 2-4 km, partendo sempre da Roveredo Zurigo, il Walensee e il San Bernardino non li vedeva quasi nessuno. I record restano confrontabili perché la difficoltà dipende dai metri percorsi, non dalla tratta (che cambia solo un po' il traffico). La **sfida giornaliera** ha una tratta di partenza uguale per tutti.
 - **Gallerie a doppia canna e 3 corsie** ovunque, anche al Gottardo e al San Bernardino.
 - **Meteo e ora del giorno casuali per tratta**, non fissi: vengono dal seed della partita, quindi cambiano da una partita all'altra ma nella sfida giornaliera sono uguali per tutti. La prima tratta della partita è sempre di giorno.
 - **Un solo "Continua" con pubblicità a premio per partita.**
@@ -204,9 +211,9 @@ I valori sono in `Scripts/Route/route_data.gd` e si bilanciano lì.
 - Le gallerie hanno il nome della tratta sul portale (Gotthard Tunnel, Seelisberg Tunnel, Kerenzerberg Tunnel, San Bernardino Tunnel…).
 - Ci sono **missioni giornaliere** ("colpisci 5 bus", "vola 1 km di notte"), che portano il giocatore a fare più partite (Fase 6).
 
-### Ambientazioni per luogo (da valutare)
+### Ambientazioni per luogo
 
-Ogni tratta dovrebbe essere riconoscibile anche senza leggere il cartello. Idee per tratta, da implementare un po' alla volta:
+Ogni tratta si riconosce anche senza leggere il cartello. Idee per tratta (in grassetto i luoghi tipici; quelli fatti sono elencati sotto la tabella):
 
 | Tratta | Paesaggio | Elementi riconoscibili | Note |
 |---|---|---|---|
@@ -220,12 +227,25 @@ Ogni tratta dovrebbe essere riconoscibile anche senza leggere il cartello. Idee 
 | Sargans → Thusis | Valle del Reno larga, vigneti della Bündner Herrschaft, poi si stringe | Castello di Sargans, Coira con la città vecchia | Si torna verso le montagne |
 | San Bernardino → Roveredo | Gola della **Via Mala**, alta montagna con neve, poi la discesa nella Mesolcina | Hinterrhein, **castello di Mesocco**, il ritorno a Roveredo | Gran finale del giro: neve possibile, poi la valle verde di partenza |
 
-Come si potrebbe fare, riusando quello che c'è:
-- **Preset di paesaggio per tratta** in `SceneryFactory`: altezza e neve delle montagne, proporzione abeti/latifoglie, colline al posto delle montagne nell'altopiano, colore dell'erba, case sparse.
-- **Laghi:** un piano d'acqua low-poly accanto alla carreggiata opposta, con colore e riflesso semplici (senza riflessi in tempo reale, su mobile costano troppo).
-- **Città:** blocchi low-poly in lontananza (skyline) e capannoni vicino alla strada, generati come le montagne.
-- **Elementi riconoscibili:** un oggetto unico (castello, viadotto, chiesa, skyline) che compare a una distanza fissa della tratta, costruito con `LowPolyBuilder` e preparato da `AssetWarmup` durante il menu.
-- **Transizioni:** il paesaggio cambia gradualmente nei primi 100-200 m della tratta, oppure all'uscita di una galleria (più facile da nascondere).
+Come è fatto:
+- **Paesaggi** (`LandscapeMeshes`): 7 tipi, ognuno con 4 varianti di segmento di strada da 40 m, così non si vedono ripetizioni. Sono nello stesso mesh della strada: nessuna draw call in più.
+  - **Ticino:** castagni, rustici in pietra, muretti a secco, chiese con campanile;
+  - **Riviera:** vigneti con il muretto, case in pietra, la ferrovia con la linea aerea accanto all'autostrada;
+  - **Alpi:** abeti, rocce, chalet con il balcone e i gerani, fienili, mucche (bruna alpina, pezzata rossa, Holstein) con il campanaccio;
+  - **Altopiano:** campi coltivati di vari colori, fattorie con il tetto grande e il silo, filari di alberi da frutto, mucche, capannoni;
+  - **Lago:** riva in pietra e acqua oltre la carreggiata opposta, barche a vela, pontili, chalet e case sulla riva;
+  - **Cittadina:** case colorate con le persiane, chiese;
+  - **Città:** condomini, torri di uffici, capannoni con il colore dell'azienda, barriere antirumore.
+- **Sequenza per tratta** (`RouteSegment.with_landscape`): per esempio Lucerna → Zurigo è cittadina, poi altopiano, poi città. I segmenti che ricompaiono in fondo prendono il paesaggio del punto in cui riappariranno (circa 350 m avanti), così all'arrivo del cartello il paesaggio è già quello nuovo.
+- **Luoghi tipici** (`LandmarkMeshes`), uno per tratta a un punto fisso, compaiono in fondo nella nebbia e scorrono con la strada:
+  - Bellinzona: Castelgrande sulla collina con la Torre Bianca, la Torre Nera e la Murata;
+  - Leventina: chiesa bianca con il campanile alto, cipressi, parete di roccia;
+  - Lucerna: Ponte della Cappella coperto, con i fiori, la Torre dell'acqua e la riva della città;
+  - Zurigo: Prime Tower, Grossmünster con le due torri, guglia verde del Fraumünster;
+  - Walensee: i sette Churfirsten oltre il lago;
+  - Sargans: castello bianco sulla rupe con la bandiera svizzera;
+  - Mesocco: rovine del castello e il campanile di Santa Maria del Castello.
+- Da fare: il Gottardo (cartelli dei chilometri in galleria), Pilatus, montagne più basse nell'altopiano, finestre accese di notte in città.
 
 ### Pubblicità
 
