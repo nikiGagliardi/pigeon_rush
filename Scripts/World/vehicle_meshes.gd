@@ -22,7 +22,6 @@ const TRUCK_ROOF_MARKERS := 5
 const TRUCK_FRONT_MARKERS := 7
 
 static var _cache: Dictionary[int, ArrayMesh] = {}
-static var _splat: ArrayMesh
 
 
 static func variant_count(kind: Kind) -> int:
@@ -65,15 +64,9 @@ static func get_mesh(kind: Kind, variant: int) -> ArrayMesh:
 	return mesh
 
 
-## Macchia di cacca che appare sul tetto colpito.
+## Macchia di cacca che appare sul tetto colpito (nello stile scelto nel negozio).
 static func splat() -> ArrayMesh:
-	if _splat == null:
-		_splat = LowPolyBuilder.new() \
-			.sphere(0.45, Vector3.ZERO, Vector3(1.0, 0.12, 1.2), Palette.POOP, 7, 3) \
-			.sphere(0.22, Vector3(0.35, 0.0, -0.3), Vector3(1.0, 0.15, 1.0), Palette.POOP_SHADE, 6, 3) \
-			.sphere(0.18, Vector3(-0.3, 0.0, 0.38), Vector3(1.0, 0.15, 1.0), Palette.POOP, 6, 3) \
-			.build()
-	return _splat
+	return SplatStyles.vehicle_mesh(SplatStyles.current)
 
 
 static func _build_car(body: Color, clean: bool) -> ArrayMesh:

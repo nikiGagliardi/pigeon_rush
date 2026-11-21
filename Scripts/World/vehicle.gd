@@ -313,6 +313,7 @@ func mark_hit(world_point: Vector3) -> void:
 		y,
 		clampf(local.z, -s.length * 0.35, s.length * 0.35))
 	_splat.rotation = Vector3(0.0, randf() * TAU, 0.0)
+	_splat.mesh = VehicleMeshes.splat() # lo stile può essere cambiato dopo che il mezzo è nato
 	_splat.visible = true
 
 

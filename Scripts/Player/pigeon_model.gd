@@ -4,8 +4,10 @@ extends Node3D
 ## (negozio). Guarda verso -Z. Parti animate: testa (oscilla), coda (segue il battito), ali in due segmenti
 ## (braccio + mano) con la mano in ritardo di fase per un battito "a onda".
 ##
-## Agganci per gli accessori (BirdAccessories), uguali per ogni specie: sulla testa (sommità, faccia) e sul
-## corpo (collo), più il punto da cui cade la cacca. La hitbox è del controller, non del modello: non cambia.
+## Agganci per gli accessori (BirdAccessories): sulla testa (sommità, faccia) e sul corpo (collo), più il punto
+## da cui cade la cacca. Ogni specie può spostarli un po' (Species.socket_*_offset) e scalare gli accessori.
+## Oltre agli uccelli ci sono il maiale volante e l'unicorno (Species.kind), con le stesse parti animate.
+## La hitbox è del controller, non del modello: non cambia.
 
 const HEAD_PIVOT := Vector3(0.0, 0.2, -0.4)
 const TAIL_PIVOT := Vector3(0.0, 0.03, 0.4)
@@ -58,7 +60,7 @@ func _build(p_look: BirdLook) -> void:
 	add_child(body)
 
 	_head = Node3D.new()
-	_head_pivot = HEAD_PIVOT * species.body_scale
+	_head_pivot = (HEAD_PIVOT + species.head_offset) * species.body_scale
 	_head.position = _head_pivot
 	_head.scale = Vector3.ONE * species.head_scale
 	_head.add_child(_mesh_instance(_part(key, "head", species)))
@@ -72,7 +74,9 @@ func _build(p_look: BirdLook) -> void:
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
 		var shoulder := Node3D.new()
-		shoulder.position = Vector3(side * SHOULDER_X, 0.1, -0.06) * species.body_scale
+		var offset := species.shoulder_offset
+		shoulder.position = Vector3(side * (SHOULDER_X + offset.x), 0.1 + offset.y, -0.06 + offset.z) * species.body_scale
+		shoulder.scale = Vector3.ONE * species.wing_scale
 		shoulder.add_child(_mesh_instance(_part(key, "inner_wing_%d" % i, species)))
 		var elbow := Node3D.new()
 		elbow.position = Vector3(side * ELBOW_X, 0.0, 0.0)
@@ -82,12 +86,13 @@ func _build(p_look: BirdLook) -> void:
 		_shoulders.append(shoulder)
 		_elbows.append(elbow)
 
-	_attach(_head, SOCKET_HEAD, look.head)
-	_attach(_head, SOCKET_FACE, look.face)
-	_attach(body, SOCKET_NECK, look.neck)
+	_attach(_head, SOCKET_HEAD + species.socket_head_offset, look.head, species.accessory_scale)
+	_attach(_head, SOCKET_FACE + species.socket_face_offset, look.face, species.accessory_scale)
+	# il corpo è scalato con body_scale: l'accessorio del collo lo compensa per restare della sua misura
+	_attach(body, SOCKET_NECK + species.socket_neck_offset, look.neck, species.accessory_scale, species.body_scale)
 
 
-func _attach(parent: Node3D, socket: Vector3, id: StringName) -> void:
+func _attach(parent: Node3D, socket: Vector3, id: StringName, scale_factor: float, parent_scale := Vector3.ONE) -> void:
 	if id == BirdCatalog.NONE:
 		return
 	var mesh := BirdAccessories.mesh(id)
@@ -95,6 +100,7 @@ func _attach(parent: Node3D, socket: Vector3, id: StringName) -> void:
 		return
 	var instance := _mesh_instance(mesh)
 	instance.position = socket
+	instance.scale = Vector3.ONE * scale_factor / parent_scale
 	parent.add_child(instance)
 
 
@@ -147,11 +153,29 @@ static func _part(key: String, part: String, species: BirdCatalog.Species) -> Ar
 	var p := BirdCatalog.plumage(species.id, StringName(key.get_slice("/", 1)))
 	match part:
 		"body":
-			mesh = _build_body(p, species)
+			match species.kind:
+				&"pig":
+					mesh = _build_pig_body(p)
+				&"unicorn":
+					mesh = _build_unicorn_body(p)
+				_:
+					mesh = _build_body(p, species)
 		"head":
-			mesh = _build_head(p, species)
+			match species.kind:
+				&"pig":
+					mesh = _build_pig_head(p)
+				&"unicorn":
+					mesh = _build_unicorn_head(p)
+				_:
+					mesh = _build_head(p, species)
 		"tail":
-			mesh = _build_tail(p, species)
+			match species.kind:
+				&"pig":
+					mesh = _build_pig_tail(p)
+				&"unicorn":
+					mesh = _build_unicorn_tail(p)
+				_:
+					mesh = _build_upright_tail(p) if species.tail_up else _build_tail(p, species)
 		"inner_wing_0":
 			mesh = _build_inner_wing(p, -1.0, species)
 		"inner_wing_1":
@@ -222,12 +246,40 @@ static func _build_head(p: Dictionary, species: BirdCatalog.Species) -> ArrayMes
 	var radius := species.beak_radius
 	if species.fierce:
 		return _build_fierce_head(p, species)
+	if species.beak == &"owl":
+		return _build_owl_head(p, species)
 	var b := LowPolyBuilder.new() \
 		.sphere(0.15, Vector3(0.0, 0.08, -0.12), Vector3(0.95, 0.95, 1.08), _c(p, "head"), 12, 8) \
-		.sphere(0.1, Vector3(0.0, 0.12, -0.2), Vector3(0.9, 0.7, 1.0), _c(p, "head"), 10, 6) \
-		.cylinder(0.0, radius, length, Vector3(0.0, 0.06, -0.235 - length * 0.5), beak, 6, Vector3(-92.0, 0.0, 0.0)) \
-		.cylinder(0.0, radius * 0.37, 0.04, Vector3(0.0, 0.058, -0.235 - length), _c(p, "beak_tip"), 5, Vector3(-100.0, 0.0, 0.0)) \
-		.cylinder(0.0, radius * 0.68, length * 0.73, Vector3(0.0, 0.03, -0.235 - length * 0.37), beak, 5, Vector3(-96.0, 0.0, 0.0))
+		.sphere(0.1, Vector3(0.0, 0.12, -0.2), Vector3(0.9, 0.7, 1.0), _c(p, "head"), 10, 6)
+	match species.beak:
+		&"gull":
+			# lungo e giallo, punta piegata in giù, macchia rossa sulla mandibola
+			b.cylinder(0.0, radius, length, Vector3(0.0, 0.065, -0.235 - length * 0.5), beak, 6, Vector3(-91.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.5, 0.045, Vector3(0.0, 0.058, -0.225 - length), beak, 5, Vector3(-125.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.7, length * 0.8, Vector3(0.0, 0.035, -0.235 - length * 0.4), beak, 5, Vector3(-95.0, 0.0, 0.0))
+			b.sphere(0.017, Vector3(0.0, 0.03, -0.225 - length * 0.72), Vector3(1.2, 1.0, 1.2), _c(p, "beak_spot"), 6, 4)
+		&"hook":
+			# grosso, con la base gialla e l'uncino che scende
+			b.sphere(0.06, Vector3(0.0, 0.085, -0.235), Vector3(1.0, 0.8, 0.9), beak, 8, 5)
+			b.cylinder(0.0, radius, length, Vector3(0.0, 0.075, -0.24 - length * 0.5), beak, 6, Vector3(-97.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.5, 0.075, Vector3(0.0, 0.045, -0.235 - length), _c(p, "beak_tip"), 5, Vector3(-150.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.6, length * 0.6, Vector3(0.0, 0.035, -0.24 - length * 0.3), beak.darkened(0.1), 5, Vector3(-100.0, 0.0, 0.0))
+		&"chicken":
+			# corto e appuntito, cresta sulla testa e bargigli sotto il becco
+			b.cylinder(0.0, radius, length, Vector3(0.0, 0.06, -0.235 - length * 0.5), beak, 6, Vector3(-100.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.75, length * 0.8, Vector3(0.0, 0.035, -0.235 - length * 0.4), _c(p, "beak_tip"), 5, Vector3(-105.0, 0.0, 0.0))
+			var comb := _c(p, "comb")
+			for k in 4:
+				var z := -0.22 + k * 0.055
+				var r := 0.045 - absf(k - 1.2) * 0.006
+				b.sphere(r, Vector3(0.0, 0.215 - absf(k - 1.2) * 0.012, z), Vector3(0.45, 1.0, 0.8), comb, 8, 5)
+			b.sphere(0.03, Vector3(0.0, 0.17, -0.245), Vector3(0.5, 0.9, 0.9), comb, 6, 4)
+			for side: float in [-1.0, 1.0]:
+				b.sphere(0.03, Vector3(side * 0.018, -0.005, -0.25), Vector3(0.6, 1.3, 0.7), comb, 6, 4)
+		_:
+			b.cylinder(0.0, radius, length, Vector3(0.0, 0.06, -0.235 - length * 0.5), beak, 6, Vector3(-92.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.37, 0.04, Vector3(0.0, 0.058, -0.235 - length), _c(p, "beak_tip"), 5, Vector3(-100.0, 0.0, 0.0))
+			b.cylinder(0.0, radius * 0.68, length * 0.73, Vector3(0.0, 0.03, -0.235 - length * 0.37), beak, 5, Vector3(-96.0, 0.0, 0.0))
 	if species.has_cere:
 		b.sphere(0.045, Vector3(0.0, 0.09, -0.245), Vector3(1.1, 0.7, 1.2), _c(p, "cere"), 8, 5)
 
@@ -236,7 +288,30 @@ static func _build_head(p: Dictionary, species: BirdCatalog.Species) -> ArrayMes
 		b.sphere(0.031, Vector3(side * 0.132, 0.11, -0.17), Vector3(0.6, 1.0, 1.0), _c(p, "eye"), 8, 5)
 		b.sphere(0.016, Vector3(side * 0.147, 0.11, -0.172), Vector3(0.6, 1.0, 1.0), _c(p, "pupil"), 6, 4)
 		b.sphere(0.006, Vector3(side * 0.155, 0.118, -0.18), Vector3.ONE, Color("ffffff"), 4, 3, Vector3.ZERO, true)
+		if species.brow:
+			# sguardo fiero: sopracciglio sporgente sopra l'occhio, più basso verso il becco
+			b.box(Vector3(0.085, 0.022, 0.07), Vector3(side * 0.118, 0.14, -0.18), _c(p, "head").darkened(0.18), Vector3(0.0, side * -12.0, side * 20.0))
 
+	return b.build()
+
+
+## Testa del gufo: grande e tonda, disco facciale chiaro con gli occhioni in avanti, becco piccolo e
+## uncinato in mezzo, ciuffi sulle orecchie. Stessa origine e stessi agganci delle altre teste.
+static func _build_owl_head(p: Dictionary, species: BirdCatalog.Species) -> ArrayMesh:
+	var head := _c(p, "head")
+	var face: Color = p.get("face", _c(p, "belly"))
+	var b := LowPolyBuilder.new() \
+		.sphere(0.16, Vector3(0.0, 0.09, -0.1), Vector3(1.05, 0.95, 0.95), head, 12, 8)
+	for side: float in [-1.0, 1.0]:
+		b.sphere(0.085, Vector3(side * 0.062, 0.095, -0.2), Vector3(1.0, 1.05, 0.45), face, 10, 6)
+		b.sphere(0.042, Vector3(side * 0.062, 0.1, -0.235), Vector3(1.0, 1.0, 0.45), _c(p, "eye_ring"), 8, 5)
+		b.sphere(0.035, Vector3(side * 0.062, 0.1, -0.245), Vector3(1.0, 1.0, 0.45), _c(p, "eye"), 8, 5)
+		b.sphere(0.017, Vector3(side * 0.062, 0.1, -0.258), Vector3(1.0, 1.0, 0.45), _c(p, "pupil"), 6, 4)
+		b.sphere(0.006, Vector3(side * 0.07, 0.11, -0.264), Vector3.ONE, Color("ffffff"), 4, 3, Vector3.ZERO, true)
+		# ciuffi
+		b.prism(Vector3(0.05, 0.1, 0.03), Vector3(side * 0.085, 0.235, -0.1), head, Vector3(0.0, 0.0, side * -22.0))
+	var length := species.beak_length
+	b.cylinder(0.0, species.beak_radius, length, Vector3(0.0, 0.055, -0.245 - length * 0.4), _c(p, "beak"), 5, Vector3(-125.0, 0.0, 0.0))
 	return b.build()
 
 
@@ -288,9 +363,24 @@ static func _build_tail(p: Dictionary, species: BirdCatalog.Species) -> ArrayMes
 			b.box(Vector3(0.085, 0.018, feather), dir * (0.04 + feather * 0.5) + Vector3(0.0, lift, 0.0), _c(p, "tail"), Vector3(-6.0, angle, 0.0))
 			b.box(Vector3(0.087, 0.02, 0.06), dir * (0.04 + feather - 0.03) + Vector3(0.0, lift + 0.002, 0.0), band, Vector3(-6.0, angle, 0.0))
 			continue
-		b.sphere(1.0, dir * (0.2 + extra * 0.5) + Vector3(0.0, lift, 0.0), Vector3(0.07, 0.016, 0.24 + extra * 0.5), _c(p, "tail"), 6, 3, Vector3(-6.0, angle, 0.0))
-		b.sphere(1.0, dir * (0.4 + extra) + Vector3(0.0, lift + 0.004, 0.0), Vector3(0.072, 0.017, 0.06), band, 6, 3, Vector3(-6.0, angle, 0.0))
+		var l := species.tail_length
+		b.sphere(1.0, dir * (0.2 * l + extra * 0.5) + Vector3(0.0, lift, 0.0), Vector3(0.07, 0.016, 0.24 * l + extra * 0.5), _c(p, "tail"), 6, 3, Vector3(-6.0, angle, 0.0))
+		b.sphere(1.0, dir * (0.4 * l + extra) + Vector3(0.0, lift + 0.004, 0.0), Vector3(0.072, 0.017, 0.06), band, 6, 3, Vector3(-6.0, angle, 0.0))
 	b.sphere(0.12, Vector3(0.0, 0.01, 0.02), Vector3(1.1, 0.35, 1.0), _c(p, "body"), 8, 4) # attacco
+	return b.build()
+
+
+## Coda della gallina: penne lunghe e curve che salgono all'indietro, scure con riflessi verdi.
+static func _build_upright_tail(p: Dictionary) -> ArrayMesh:
+	var b := LowPolyBuilder.new()
+	var rainbow: bool = p.get("rainbow_tail", false)
+	for i in range(-2, 3):
+		var yaw := i * 11.0
+		var color := Color.from_hsv((i + 2) / 5.0, 0.8, 0.95) if rainbow else (_c(p, "tail_band") if absi(i) == 1 else _c(p, "tail"))
+		# due segmenti per penna: la curva che sale e la punta che ricade un po'
+		b.sphere(1.0, Vector3(i * 0.035, 0.1, 0.07), Vector3(0.045, 0.16, 0.035), color, 6, 4, Vector3(-35.0, yaw, 0.0))
+		b.sphere(1.0, Vector3(i * 0.05, 0.24, 0.16), Vector3(0.04, 0.1, 0.03), color, 6, 4, Vector3(-75.0, yaw, 0.0))
+	b.sphere(0.12, Vector3(0.0, 0.02, 0.0), Vector3(1.0, 0.6, 0.9), _c(p, "rump"), 8, 4) # attacco
 	return b.build()
 
 
@@ -301,7 +391,7 @@ static func _build_inner_wing(p: Dictionary, side: float, species: BirdCatalog.S
 		.sphere(1.0, Vector3(side * 0.23, 0.0, 0.03), Vector3(0.26, 0.035, 0.19), _c(p, "wing"), _seg(f, 10), _ring(f, 5)) \
 		.sphere(1.0, Vector3(side * 0.1, 0.02, 0.1), Vector3(0.14, 0.03, 0.2), _c(p, "body"), _seg(f, 8), _ring(f, 4))
 
-	if not f:
+	if species.id == BirdCatalog.PIGEON:
 		# le due barre tipiche del piccione torraiolo
 		b.box(Vector3(0.3, 0.075, 0.035), Vector3(side * 0.24, 0.004, 0.08), _c(p, "bar"), Vector3(0.0, side * -8.0, 0.0))
 		b.box(Vector3(0.28, 0.075, 0.035), Vector3(side * 0.24, 0.004, 0.15), _c(p, "bar"), Vector3(0.0, side * -8.0, 0.0))
@@ -348,3 +438,114 @@ static func _build_outer_wing(p: Dictionary, side: float, species: BirdCatalog.S
 			Vector3(length, 0.012, 0.05), shades[k], 6, 3, Vector3(0.0, yaw, 0.0))
 
 	return b.build()
+
+
+# ------------------------------------------------------------------ maiale volante
+
+## Corpo del maiale: botte rosa con la pancia più chiara e quattro zampette con gli zoccoli.
+static func _build_pig_body(p: Dictionary) -> ArrayMesh:
+	var b := LowPolyBuilder.new() \
+		.sphere(0.31, Vector3(0.0, -0.02, 0.02), Vector3(1.0, 0.9, 1.3), _c(p, "body"), 14, 9) \
+		.sphere(0.25, Vector3(0.0, -0.09, 0.02), Vector3(0.95, 0.7, 1.25), _c(p, "belly"), 12, 7) \
+		.sphere(0.2, Vector3(0.0, 0.0, -0.26), Vector3(1.05, 1.0, 0.9), _c(p, "chest"), 12, 8)
+	for leg: Vector3 in [Vector3(-0.12, -0.25, -0.17), Vector3(0.12, -0.25, -0.17), Vector3(-0.12, -0.25, 0.2), Vector3(0.12, -0.25, 0.2)]:
+		b.cylinder(0.045, 0.05, 0.12, leg, _c(p, "body"), 8)
+		b.cylinder(0.046, 0.046, 0.04, leg + Vector3(0.0, -0.075, 0.0), _c(p, "foot"), 8)
+	return b.build()
+
+
+## Testa del maiale: tonda, grugno con le narici, orecchie a punta che ricadono, occhietti neri.
+static func _build_pig_head(p: Dictionary) -> ArrayMesh:
+	var head := _c(p, "head")
+	var snout: Color = p.get("snout", _c(p, "beak"))
+	var b := LowPolyBuilder.new() \
+		.sphere(0.17, Vector3(0.0, 0.02, -0.07), Vector3(1.0, 0.95, 0.95), head, 12, 8) \
+		.cylinder(0.07, 0.075, 0.07, Vector3(0.0, -0.01, -0.235), snout, 10, Vector3(-90.0, 0.0, 0.0))
+	var nostril: Color = p.get("nostril", _c(p, "beak_tip"))
+	var ear: Color = p.get("ear", head.darkened(0.08))
+	for side: float in [-1.0, 1.0]:
+		b.sphere(0.016, Vector3(side * 0.026, -0.005, -0.27), Vector3(0.8, 1.2, 0.5), nostril, 6, 4)
+		b.prism(Vector3(0.09, 0.1, 0.025), Vector3(side * 0.1, 0.16, -0.05), ear, Vector3(-25.0, 0.0, side * -35.0))
+		b.sphere(0.022, Vector3(side * 0.085, 0.07, -0.19), Vector3(0.7, 1.0, 0.8), _c(p, "eye"), 6, 4)
+		b.sphere(0.006, Vector3(side * 0.092, 0.078, -0.206), Vector3.ONE, Color("ffffff"), 4, 3, Vector3.ZERO, true)
+	return b.build()
+
+
+## Codino a molla: due giri di spirale.
+static func _build_pig_tail(p: Dictionary) -> ArrayMesh:
+	var b := LowPolyBuilder.new()
+	var color := _c(p, "tail")
+	for k in 9:
+		var a := k * 0.8
+		var r := 0.045 - k * 0.002
+		b.sphere(0.018, Vector3(cos(a) * r, 0.04 + sin(a) * r + k * 0.006, 0.03 + k * 0.012), Vector3.ONE, color, 6, 4)
+	return b.build()
+
+
+# ------------------------------------------------------------------ unicorno
+
+## Corpo dell'unicorno: botte bianca, collo che sale in avanti con la criniera pastello, zampe raccolte in volo.
+static func _build_unicorn_body(p: Dictionary) -> ArrayMesh:
+	var body := _c(p, "body")
+	var b := LowPolyBuilder.new() \
+		.sphere(0.27, Vector3(0.0, -0.02, 0.06), Vector3(0.95, 0.88, 1.5), body, 14, 9) \
+		.sphere(0.22, Vector3(0.0, -0.08, 0.06), Vector3(0.9, 0.7, 1.4), _c(p, "belly"), 12, 7) \
+		.sphere(0.2, Vector3(0.0, 0.0, -0.24), Vector3(1.0, 1.05, 0.9), _c(p, "chest"), 12, 8) \
+		.cylinder(0.085, 0.13, 0.32, Vector3(0.0, 0.17, -0.37), _c(p, "neck"), 10, Vector3(-30.0, 0.0, 0.0))
+	var manes: Array[Color] = [_mane(p, 0), _mane(p, 1), _mane(p, 2)]
+	for k in 6:
+		var t := k / 5.0
+		var pos := Vector3(0.0, 0.36, -0.42).lerp(Vector3(0.0, 0.13, -0.24), t)
+		b.sphere(0.055, pos, Vector3(0.55, 1.0, 1.1), manes[k % 3], 8, 5, Vector3(-30.0, 0.0, 0.0))
+	var hoof := _c(p, "foot")
+	for side: float in [-1.0, 1.0]:
+		# zampe davanti piegate in avanti, dietro distese all'indietro
+		b.cylinder(0.035, 0.042, 0.2, Vector3(side * 0.1, -0.24, -0.2), body, 8, Vector3(35.0, 0.0, 0.0))
+		b.cylinder(0.04, 0.04, 0.04, Vector3(side * 0.1, -0.31, -0.27), hoof, 8, Vector3(35.0, 0.0, 0.0))
+		b.cylinder(0.035, 0.045, 0.2, Vector3(side * 0.1, -0.22, 0.32), body, 8, Vector3(-40.0, 0.0, 0.0))
+		b.cylinder(0.04, 0.04, 0.04, Vector3(side * 0.1, -0.28, 0.4), hoof, 8, Vector3(-40.0, 0.0, 0.0))
+	return b.build()
+
+
+## Testa dell'unicorno: muso lungo, occhioni, orecchie, ciuffo pastello e il corno dorato a spirale.
+static func _build_unicorn_head(p: Dictionary) -> ArrayMesh:
+	var head := _c(p, "head")
+	var b := LowPolyBuilder.new() \
+		.sphere(0.12, Vector3(0.0, 0.02, -0.05), Vector3(0.85, 0.95, 1.1), head, 12, 8) \
+		.sphere(0.09, Vector3(0.0, -0.035, -0.17), Vector3(0.78, 0.72, 1.25), head, 10, 6)
+	var muzzle := _c(p, "beak")
+	b.sphere(0.06, Vector3(0.0, -0.05, -0.245), Vector3(1.0, 0.85, 0.8), muzzle, 8, 5)
+	for side: float in [-1.0, 1.0]:
+		b.sphere(0.012, Vector3(side * 0.025, -0.04, -0.29), Vector3(0.8, 1.0, 0.5), _c(p, "beak_tip"), 5, 3)
+		b.sphere(0.034, Vector3(side * 0.085, 0.04, -0.09), Vector3(0.5, 1.1, 1.0), _c(p, "eye"), 8, 5)
+		b.sphere(0.009, Vector3(side * 0.1, 0.055, -0.105), Vector3.ONE, Color("ffffff"), 4, 3, Vector3.ZERO, true)
+		b.box(Vector3(0.012, 0.012, 0.04), Vector3(side * 0.098, 0.078, -0.09), _c(p, "pupil"), Vector3(0.0, 0.0, side * -25.0)) # ciglia
+		b.prism(Vector3(0.04, 0.08, 0.025), Vector3(side * 0.055, 0.135, 0.0), head, Vector3(0.0, 0.0, side * -12.0))
+	# ciuffo sulla fronte e corno
+	b.sphere(0.045, Vector3(0.0, 0.12, -0.02), Vector3(0.9, 0.7, 1.1), _mane(p, 1), 8, 5)
+	b.sphere(0.04, Vector3(0.03, 0.115, 0.03), Vector3(0.8, 0.7, 1.0), _mane(p, 0), 8, 5)
+	var horn: Color = p.get("horn", Color("f2c94c"))
+	b.cylinder(0.0, 0.028, 0.2, Vector3(0.0, 0.2, -0.1), horn, 6, Vector3(-25.0, 0.0, 0.0))
+	for k in 3:
+		var t := 0.2 + k * 0.22
+		b.cylinder(0.028 * (1.0 - t) + 0.003, 0.028 * (1.0 - t) + 0.003, 0.012, Vector3(0.0, 0.11 + 0.18 * t, -0.058 - 0.084 * t), horn.darkened(0.2), 6, Vector3(-25.0, 0.0, 0.0))
+	return b.build()
+
+
+## Coda dell'unicorno: ciocche pastello che scendono all'indietro (arcobaleno nel piumaggio "rainbow").
+static func _build_unicorn_tail(p: Dictionary) -> ArrayMesh:
+	var b := LowPolyBuilder.new()
+	var rainbow: bool = p.get("rainbow_tail", false)
+	for k in 7:
+		var t := k / 6.0
+		var color := Color.from_hsv(t * 0.85, 0.55, 1.0) if rainbow else _mane(p, k)
+		var pos := Vector3(sin(t * 5.0) * 0.03, 0.02 - t * 0.2, 0.04 + t * 0.3)
+		b.sphere(0.06 - t * 0.02, pos, Vector3(0.7, 0.8, 1.3), color, 8, 5, Vector3(35.0, 0.0, 0.0))
+	return b.build()
+
+
+## Colori della criniera (tre, in giro); con un piumaggio diverso dal naturale seguono la coda.
+static func _mane(p: Dictionary, k: int) -> Color:
+	var keys := ["mane", "mane2", "mane3"]
+	var key: String = keys[k % 3]
+	return p.get(key, _c(p, "tail")) as Color

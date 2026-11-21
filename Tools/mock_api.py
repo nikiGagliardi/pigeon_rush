@@ -5,7 +5,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATE = {"players": {}, "runs": [], "balance": {}, "claimed": set(), "owned": {}}
 CATALOG = [("pigeon", "bird", 0, "common"), ("crow", "bird", 2500, "special"), ("classic", "feathers", 0, "common"),
            ("dove", "feathers", 250, "common"), ("cap", "head", 150, "common"), ("sunglasses", "face", 180, "common"),
-           ("cowbell", "neck", 200, "common"), ("dragon_wings", "bird", 100, "common")]  # l'ultimo: sconosciuto al gioco
+           ("cowbell", "neck", 200, "common"), ("owl", "bird", 1500, "rare"), ("unicorn", "bird", 5000, "legendary"),
+           ("contrail", "trail", 300, "common"), ("rainbow_trail", "trail", 2500, "special"),
+           ("bubblegum", "splat", 250, "common"), ("rainbow_splat", "splat", 2000, "special"),
+           ("dragon_wings", "bird", 100, "common")]  # l'ultimo: sconosciuto al gioco
 
 
 def shop(token):

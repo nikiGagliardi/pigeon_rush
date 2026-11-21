@@ -8,7 +8,9 @@ signal look_changed(look: BirdLook)
 signal closed
 
 const DIM := Color(1.0, 1.0, 1.0, 0.75)
-const TIER_COLORS := {"common": Color("8f9bb3"), "rare": Color("4fa3ff"), "special": Color("ffd54a")}
+const TIER_COLORS := {"common": Color("8f9bb3"), "rare": Color("4fa3ff"), "special": Color("ffd54a"),
+	"legendary": Color("c77dff")}
+const TIER_NAMES := {"common": "Common", "rare": "Rare", "special": "Special", "legendary": "Legendary"}
 const PREVIEW_SIZE := Vector2i(420, 400)
 const CARD_SIZE := Vector2(196.0, 134.0)
 const ICON_SIZE := 70.0
@@ -41,6 +43,13 @@ var _card_icons: Dictionary[StringName, TextureRect] = {}
 var _icons: ShopIcons
 
 var _bird: PigeonModel
+## Gira con l'uccello: la scia di prova è figlia sua, non dell'uccello (set_look ricrea i figli).
+var _turntable: Node3D
+var _trail_demo: BirdTrail
+## Macchia di prova sotto l'uccello, solo nella scheda SPLAT.
+var _splat_demo: Node3D
+var _splat_road: MeshInstance3D
+var _splat_drop: MeshInstance3D
 var _tabs: Dictionary[String, Button] = {}
 var _grid: GridContainer
 var _balance: Label
@@ -62,12 +71,12 @@ func _ready() -> void:
 func open(look: BirdLook) -> void:
 	_equipped = look.duplicate_look()
 	_preview_look = look.duplicate_look()
-	_bird.set_look(_preview_look)
 	_category = BirdCatalog.CATEGORY_BIRD
 	_selected = _equipped.species
 	_set_message("")
 	_confirm_id = &""
 	_fill_from_cache()
+	_refresh_preview()
 	visible = true
 	set_process(true)
 	_refresh()
@@ -86,7 +95,7 @@ func close() -> void:
 
 
 func _process(delta: float) -> void:
-	_bird.rotation.y += delta * 0.6
+	_turntable.rotation.y += delta * 0.6
 	_bird.flap(delta, 7.0, 0.55)
 	if not _confirm_id.is_empty():
 		_confirm_left -= delta
@@ -120,7 +129,7 @@ func _fill_from_cache() -> void:
 
 
 func _add_none_items() -> void:
-	for category: String in [BirdCatalog.CATEGORY_HEAD, BirdCatalog.CATEGORY_FACE, BirdCatalog.CATEGORY_NECK]:
+	for category: String in BirdCatalog.NONE_CATEGORIES:
 		var key := StringName("%s:none" % category)
 		var item := Item.new()
 		item.id = BirdCatalog.NONE
@@ -185,7 +194,7 @@ func _select(id: StringName) -> void:
 	_selected = id
 	_confirm_id = &""
 	_preview_look.set_item(_category, id)
-	_bird.set_look(_preview_look)
+	_refresh_preview()
 	_set_message("")
 	_refresh()
 
@@ -195,7 +204,7 @@ func _select_category(category: String) -> void:
 	_confirm_id = &""
 	_selected = _equipped.get_item(category)
 	_preview_look = _equipped.duplicate_look()
-	_bird.set_look(_preview_look)
+	_refresh_preview()
 	_refresh()
 
 
@@ -236,7 +245,7 @@ func _buy(item: Item) -> void:
 				GameAudio.instance.play_ui(GameAudio.Sfx.COMBO, 0.0, 1.2)
 			_equipped.set_item(_category, item.id) # appena comprato: lo indossi subito
 			look_changed.emit(_equipped.duplicate_look())
-			_set_message("%s is yours!" % BirdCatalog.name_of(item.id))
+			_set_message("%s is yours!" % BirdCatalog.name_of(item.id, item.category))
 		409:
 			_set_message("Not enough golden crumbs.", Palette.DANGER)
 		404:
@@ -272,7 +281,7 @@ func _refresh() -> void:
 		_grid.add_child(_make_card(item))
 
 	var selected := _item(_category, _selected)
-	_item_name.text = BirdCatalog.name_of(_selected)
+	_item_name.text = BirdCatalog.name_of(_selected, _category)
 	if selected == null:
 		_item_info.text = ""
 		_action.visible = false
@@ -284,7 +293,7 @@ func _refresh() -> void:
 		_action.text = "EQUIPPED" if equipped else "EQUIP"
 		_action.disabled = equipped or _busy
 	else:
-		var tier_name: String = {"common": "Common", "rare": "Rare", "special": "Special"}.get(selected.tier, "")
+		var tier_name: String = TIER_NAMES.get(selected.tier, "")
 		_item_info.text = str(tier_name) + ("  •  until %s" % selected.available_until.substr(0, 10) if not selected.available_until.is_empty() else "")
 		var affordable := balance >= selected.price
 		if not affordable:
@@ -317,7 +326,7 @@ func _make_card(item: Item) -> Button:
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	# icona 3D (arriva da ShopIcons, anche dopo); "nessuno" ha un trattino
-	if item.id == BirdCatalog.NONE:
+	if item.id == BirdCatalog.NONE and item.category != BirdCatalog.CATEGORY_SPLAT:
 		var dash := UiStyle.make_label("—", 44, Color(1.0, 1.0, 1.0, 0.35), HORIZONTAL_ALIGNMENT_CENTER)
 		dash.custom_minimum_size = Vector2(0.0, ICON_SIZE)
 		dash.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -329,11 +338,12 @@ func _make_card(item: Item) -> Button:
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		icon.texture = ShopIcons.get_icon(item.id)
+		var icon_id := ShopIcons.CLASSIC_SPLAT if item.id == BirdCatalog.NONE else item.id
+		icon.texture = ShopIcons.get_icon(icon_id)
 		box.add_child(icon)
-		_card_icons[item.id] = icon
+		_card_icons[icon_id] = icon
 
-	var name_label := UiStyle.make_label(BirdCatalog.name_of(item.id), 19, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	var name_label := UiStyle.make_label(BirdCatalog.name_of(item.id, item.category), 19, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 	var status := ""
@@ -354,6 +364,16 @@ func _make_card(item: Item) -> Button:
 	return card
 
 
+## Anteprima: l'uccello con l'aspetto in prova, la sua scia ferma dietro e, nella scheda SPLAT, una macchia
+## sull'asfalto con la goccia che cade.
+func _refresh_preview() -> void:
+	_bird.set_look(_preview_look)
+	_trail_demo.build_demo(_preview_look, 1.4, 1.4)
+	_splat_demo.visible = _category == BirdCatalog.CATEGORY_SPLAT
+	_splat_road.mesh = SplatStyles.road_mesh(_preview_look.splat)
+	_splat_drop.mesh = SplatStyles.drop_mesh(_preview_look.splat)
+
+
 ## Pulsante verde con il testo bianco mentre aspetta il secondo tocco; altrimenti lo stile normale.
 func _set_confirm_style(confirming: bool) -> void:
 	var text_color := Color.WHITE if confirming else UiStyle.TEXT_DARK
@@ -371,6 +391,7 @@ func _request_icons() -> void:
 	for id: StringName in BirdCatalog.ITEMS:
 		if not ids.has(id):
 			ids.append(id)
+	ids.append(ShopIcons.CLASSIC_SPLAT)
 	_icons.request(ids)
 
 
@@ -446,8 +467,27 @@ func _build() -> void:
 	camera.fov = 30.0
 	viewport.add_child(camera)
 	camera.look_at_from_position(Vector3(0.0, 1.15, 3.4), Vector3(0.0, 0.08, 0.0), Vector3.UP)
+	_turntable = Node3D.new()
+	viewport.add_child(_turntable)
 	_bird = PigeonModel.new()
-	viewport.add_child(_bird)
+	_turntable.add_child(_bird)
+	_trail_demo = BirdTrail.new()
+	_turntable.add_child(_trail_demo)
+	_splat_demo = Node3D.new()
+	_splat_demo.visible = false
+	_turntable.add_child(_splat_demo)
+	var asphalt := MeshInstance3D.new()
+	asphalt.mesh = LowPolyBuilder.new().cylinder(0.8, 0.8, 0.04, Vector3.ZERO, Color("4a4f57"), 16).build()
+	asphalt.position = Vector3(0.0, -0.62, 0.0)
+	_splat_demo.add_child(asphalt)
+	_splat_road = MeshInstance3D.new()
+	_splat_road.position = Vector3(0.15, -0.585, 0.2)
+	_splat_road.scale = Vector3.ONE * 1.3
+	_splat_demo.add_child(_splat_road)
+	_splat_drop = MeshInstance3D.new()
+	_splat_drop.position = Vector3(0.0, -0.4, 0.15)
+	_splat_drop.scale = Vector3(0.85, 1.25, 0.85)
+	_splat_demo.add_child(_splat_drop)
 	_icons = ShopIcons.new()
 	add_child(_icons)
 	_icons.icon_ready.connect(_on_icon_ready)
@@ -459,13 +499,16 @@ func _build() -> void:
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 12)
 	body.add_child(right)
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 8)
+	# due righe di schede: 4 + 3
+	var tabs := GridContainer.new()
+	tabs.columns = 4
+	tabs.add_theme_constant_override("h_separation", 8)
+	tabs.add_theme_constant_override("v_separation", 8)
 	right.add_child(tabs)
 	for category: String in BirdCatalog.CATEGORIES:
 		var tab := UiStyle.make_button(str(BirdCatalog.CATEGORY_TITLES[category]), 20)
 		tab.toggle_mode = true
-		tab.custom_minimum_size = Vector2(118.0, 48.0)
+		tab.custom_minimum_size = Vector2(150.0, 44.0)
 		tab.add_theme_stylebox_override("normal", UiStyle.flat(Color(1.0, 1.0, 1.0, 0.12), 14))
 		tab.add_theme_color_override("font_color", Color.WHITE)
 		var c := category

@@ -37,6 +37,11 @@ func _ready() -> void:
 	_update_shadow()
 
 
+## Posa del modello nel mondo (inclinazioni comprese): da qui partono le scie.
+func model_transform() -> Transform3D:
+	return _model.global_transform
+
+
 func set_look(p_look: BirdLook) -> void:
 	look = p_look
 	if _model != null:

@@ -12,6 +12,12 @@ const FOV := 30.0
 ## quasi di fronte per occhiali, sciarpa e campanaccio.
 const VIEW_DIR := Vector3(0.62, 0.42, -1.0)
 const VIEW_DIR_FRONT := Vector3(0.3, 0.05, -1.0)
+## Scie e macchie si guardano dall'alto.
+const VIEW_DIR_TOP := Vector3(0.45, 1.1, -0.7)
+## Scie: da dietro e dall'alto, con l'uccello davanti.
+const VIEW_DIR_BEHIND := Vector3(0.55, 0.85, 1.0)
+## Icona della cacca classica (in negozio è "none" nella scheda SPLAT).
+const CLASSIC_SPLAT := &"classic_splat"
 
 static var _textures: Dictionary[StringName, Texture2D] = {}
 
@@ -61,7 +67,7 @@ func request(ids: Array[StringName]) -> void:
 	if _viewport == null:
 		return
 	for id: StringName in ids:
-		if not _textures.has(id) and not _queue.has(id) and BirdCatalog.knows(id):
+		if not _textures.has(id) and not _queue.has(id) and (BirdCatalog.knows(id) or id == CLASSIC_SPLAT):
 			_queue.append(id)
 	if not _running and not _queue.is_empty():
 		_run()
@@ -88,9 +94,34 @@ func _pose(id: StringName) -> void:
 	if _subject != null:
 		_viewport.remove_child(_subject)
 		_subject.queue_free()
-	var category := BirdCatalog.category_of(id)
+	var category := BirdCatalog.CATEGORY_SPLAT if id == CLASSIC_SPLAT else BirdCatalog.category_of(id)
 	var bounds: AABB
-	if category == BirdCatalog.CATEGORY_BIRD or category == BirdCatalog.CATEGORY_FEATHERS:
+	if category == BirdCatalog.CATEGORY_TRAIL:
+		# il piccione visto da dietro con la sua scia
+		var look := BirdLook.new()
+		look.trail = id
+		var bird := PigeonModel.new(look)
+		bird.flap(-1.2, 1.0, 0.75)
+		var trail := BirdTrail.new()
+		trail.additive_allowed = false
+		trail.build_demo(look, 1.6, 1.8)
+		bird.add_child(trail)
+		_subject = bird
+		bounds = AABB(Vector3(-0.7, -0.3, -0.5), Vector3(1.4, 0.5, 2.1))
+	elif category == BirdCatalog.CATEGORY_SPLAT:
+		var style := BirdCatalog.NONE if id == CLASSIC_SPLAT else id
+		var holder := Node3D.new()
+		var road := MeshInstance3D.new()
+		road.mesh = SplatStyles.road_mesh(style)
+		holder.add_child(road)
+		var drop := MeshInstance3D.new()
+		drop.mesh = SplatStyles.drop_mesh(style)
+		drop.position = Vector3(-0.25, 0.3, -0.25)
+		drop.scale = Vector3(0.85, 1.25, 0.85)
+		holder.add_child(drop)
+		_subject = holder
+		bounds = AABB(Vector3(-0.5, -0.05, -0.55), Vector3(1.0, 0.45, 1.1))
+	elif category == BirdCatalog.CATEGORY_BIRD or category == BirdCatalog.CATEGORY_FEATHERS:
 		var look := BirdLook.new()
 		look.set_item(category, id)
 		var bird := PigeonModel.new(look)
@@ -107,6 +138,11 @@ func _pose(id: StringName) -> void:
 	var center := bounds.get_center()
 	var radius := maxf(bounds.size.length() * 0.5, 0.05)
 	var distance := radius / sin(deg_to_rad(FOV * 0.5)) * 1.02
-	var front := category == BirdCatalog.CATEGORY_FACE or category == BirdCatalog.CATEGORY_NECK
-	var dir := VIEW_DIR_FRONT if front else VIEW_DIR
+	var dir := VIEW_DIR
+	if category == BirdCatalog.CATEGORY_FACE or category == BirdCatalog.CATEGORY_NECK:
+		dir = VIEW_DIR_FRONT
+	elif category == BirdCatalog.CATEGORY_TRAIL:
+		dir = VIEW_DIR_BEHIND
+	elif category == BirdCatalog.CATEGORY_SPLAT:
+		dir = VIEW_DIR_TOP
 	_camera.look_at_from_position(center + dir.normalized() * distance, center, Vector3.UP)

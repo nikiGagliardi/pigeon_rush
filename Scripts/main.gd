@@ -34,6 +34,7 @@ var _atmosphere: Atmosphere
 var _precipitation: Precipitation
 
 var _pigeon: PigeonController
+var _trail: BirdTrail
 var _camera: ChaseCamera
 var _road: RoadScroller
 var _landmarks: LandmarkSpawner
@@ -150,6 +151,12 @@ func _ready() -> void:
 	_pigeon.look = _owned_look()
 	add_child(_pigeon)
 
+	_trail = BirdTrail.new()
+	_trail.top_level = true
+	add_child(_trail)
+	_trail.set_look(_pigeon.look)
+	SplatStyles.current = _pigeon.look.splat
+
 	_poop = PoopSystem.new()
 	add_child(_poop)
 
@@ -223,6 +230,10 @@ func _ready() -> void:
 			setup = RunSetup.daily() if _smoke_runs == 1 else RunSetup.normal(0)
 			if _smoke_runs == 0:
 				setup.start_segment = _smoke_start
+			else:
+				# la seconda partita prova anche scia e cacca del negozio
+				_trail.set_style(&"rainbow_trail")
+				SplatStyles.current = &"rainbow_splat"
 		_next_setup = null
 		_start_game(setup)
 	else:
@@ -243,13 +254,20 @@ func _owned_look() -> BirdLook:
 
 func _on_owned_changed() -> void:
 	if _pigeon != null:
-		_pigeon.set_look(_owned_look())
+		_apply_look(_owned_look())
 
 
 func _on_look_changed(look: BirdLook) -> void:
 	_save.bird_look = look
 	_save.save()
-	_pigeon.set_look(_owned_look())
+	_apply_look(_owned_look())
+
+
+## Uccello, scia e stile della cacca.
+func _apply_look(look: BirdLook) -> void:
+	_pigeon.set_look(look)
+	_trail.set_look(look)
+	SplatStyles.current = look.splat
 
 
 ## Saldo, missioni e negozio nel titolo: subito l'ultimo valore noto, poi quello del server (se c'è rete).
@@ -425,6 +443,7 @@ func _tick_playing(dt: float) -> void:
 	_play_flap_on_climb(input.y)
 
 	_advance_world(ground_step)
+	_trail.tick(ground_step, _pigeon.model_transform())
 	_traffic.tick(dt, ground_step, traffic_step, _session)
 	_ambient.tick(dt, speed.pigeon_speed)
 
@@ -724,6 +743,7 @@ func _on_pigeon_hit(p_position: Vector3) -> void:
 		return
 	# un colpo e basta: niente vite (al massimo un Continua)
 	_session.crash()
+	_trail.clear()
 	_audio.play(Sfx.CRASH)
 	_camera.add_trauma(0.85)
 	_feather_burst.global_position = p_position
@@ -741,6 +761,7 @@ func _start_game(setup: RunSetup) -> void:
 		_warmup.finish_now()
 
 	_session.begin(setup)
+	_trail.clear()
 	_session.route.segment_entered.connect(_on_segment_entered)
 	if _title_setup == null or setup != _title_setup:
 		_show_route_scenery(_session.route) # nel titolo c'era già il paesaggio di questa partenza
@@ -1136,9 +1157,10 @@ func _smoke_check_shop(online: GameServicesClient) -> void:
 		_smoke_errors.append("negozio: oggetto comprato ancora tra quelli in vendita")
 	if too_expensive.status != 409:
 		_smoke_errors.append("negozio: acquisto troppo caro non rifiutato (status %d)" % too_expensive.status)
-	var look := BirdLook.from_dict({"head": "cap", "species": "crow"})
+	var look := BirdLook.from_dict({"head": "cap", "species": "crow", "trail": "contrail", "splat": "bubblegum"})
 	look.keep_owned(Array(online.owned_items))
-	if look.head != &"cap" or look.species != BirdCatalog.PIGEON:
+	if look.head != &"cap" or look.species != BirdCatalog.PIGEON or look.trail != BirdCatalog.NONE \
+			or look.splat != BirdCatalog.NONE:
 		_smoke_errors.append("negozio: oggetti posseduti non rispettati")
 	_pigeon.set_look(look)
 	print("[Smoke] negozio: %d oggetti, saldo %d → %d, posseduti %s" % [

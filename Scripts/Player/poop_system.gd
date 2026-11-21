@@ -21,8 +21,6 @@ const POOL_SIZE := 16
 ## Valore restituito da _compute_shot quando il mezzo non è un bersaglio valido.
 const NO_SHOT := Vector3(INF, INF, INF)
 
-static var _drop_mesh: ArrayMesh
-static var _road_splat_mesh: ArrayMesh
 static var _reticle_mesh: ArrayMesh
 
 var locked_target: Vehicle = null
@@ -204,22 +202,13 @@ static func _deactivate(poop: Poop) -> void:
 	poop.node.visible = false
 
 
+## Goccia e macchia sull'asfalto nello stile scelto nel negozio (SplatStyles).
 static func drop_mesh() -> ArrayMesh:
-	if _drop_mesh == null:
-		_drop_mesh = LowPolyBuilder.new() \
-			.sphere(0.11, Vector3.ZERO, Vector3(1.0, 1.2, 1.0), Palette.POOP, 6, 4) \
-			.sphere(0.06, Vector3(0.04, 0.05, 0.03), Vector3.ONE, Palette.POOP_SHADE, 5, 3) \
-			.build()
-	return _drop_mesh
+	return SplatStyles.drop_mesh(SplatStyles.current)
 
 
 static func road_splat_mesh() -> ArrayMesh:
-	if _road_splat_mesh == null:
-		_road_splat_mesh = LowPolyBuilder.new() \
-			.sphere(0.35, Vector3.ZERO, Vector3(1.0, 0.06, 1.4), Palette.POOP, 7, 3) \
-			.sphere(0.16, Vector3(0.25, 0.0, 0.3), Vector3(1.0, 0.08, 1.0), Palette.POOP_SHADE, 6, 3) \
-			.build()
-	return _road_splat_mesh
+	return SplatStyles.road_mesh(SplatStyles.current)
 
 
 ## Anello giallo unlit di raggio 1 (scalato in base al mezzo).
