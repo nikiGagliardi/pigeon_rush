@@ -209,6 +209,9 @@ func _ready() -> void:
 	_poop.vehicle_hit.connect(_on_vehicle_hit)
 	_poop.road_hit.connect(_on_poop_road_hit)
 	online.wallet_changed.connect(_screens.set_title_crumbs)
+	online.wallet_changed.connect(func(_balance: int) -> void: _update_shop_affordable())
+	online.shop_changed.connect(_update_shop_affordable)
+	_update_shop_affordable()
 	_screens.shop_pressed.connect(func() -> void: _screens.show_shop(_owned_look()))
 	_screens.shop.look_changed.connect(_on_look_changed)
 
@@ -249,12 +252,18 @@ func _on_look_changed(look: BirdLook) -> void:
 	_pigeon.set_look(_owned_look())
 
 
-## Saldo e missioni nel titolo: subito l'ultimo valore noto, poi quello del server (se c'è rete).
+## Saldo, missioni e negozio nel titolo: subito l'ultimo valore noto, poi quello del server (se c'è rete).
 func _refresh_title_online(online: GameServicesClient) -> void:
 	_screens.set_title_crumbs(online.balance)
 	_screens.set_missions_badge(online.claimable_missions)
 	if online.enabled:
 		online.fetch_missions() # aggiorna saldo e numero di missioni da riscuotere (segnali)
+		online.fetch_shop() # catalogo per il pallino su SHOP
+
+
+func _update_shop_affordable() -> void:
+	var online := GameServicesClient.instance
+	_screens.set_shop_affordable(online != null and online.enabled and online.can_afford_new_item())
 
 
 ## Una missione completata con l'ultima partita: lo si dice nel game over, il numero va sul pulsante del titolo.
@@ -1117,10 +1126,14 @@ func _smoke_check_shop(online: GameServicesClient) -> void:
 		_smoke_errors.append("negozio: catalogo non letto (status %d)" % shop.status)
 		return
 	var before := online.balance
+	if not online.shop_prices.has("cap") or online.can_afford_new_item() != (before >= 150):
+		_smoke_errors.append("negozio: prezzi per il pallino non letti (%s)" % online.shop_prices)
 	var bought := await online.buy_item("cap")
 	var too_expensive := await online.buy_item("crow")
 	if not bought.ok or not online.owned_items.has("cap") or online.balance != before - 150:
 		_smoke_errors.append("negozio: acquisto non riuscito (status %d, saldo %d → %d)" % [bought.status, before, online.balance])
+	if online.shop_prices.has("cap"):
+		_smoke_errors.append("negozio: oggetto comprato ancora tra quelli in vendita")
 	if too_expensive.status != 409:
 		_smoke_errors.append("negozio: acquisto troppo caro non rifiutato (status %d)" % too_expensive.status)
 	var look := BirdLook.from_dict({"head": "cap", "species": "crow"})

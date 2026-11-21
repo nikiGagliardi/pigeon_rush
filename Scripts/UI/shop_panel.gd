@@ -10,6 +10,11 @@ signal closed
 const DIM := Color(1.0, 1.0, 1.0, 0.75)
 const TIER_COLORS := {"common": Color("8f9bb3"), "rare": Color("4fa3ff"), "special": Color("ffd54a")}
 const PREVIEW_SIZE := Vector2i(420, 400)
+const CARD_SIZE := Vector2(196.0, 134.0)
+const ICON_SIZE := 70.0
+## Secondi entro cui va dato il secondo tocco su BUY, poi il pulsante torna normale.
+const CONFIRM_SECONDS := 4.0
+const CONFIRM_GREEN := Color("2e9e5b")
 
 ## Oggetto del catalogo mostrato in una scheda.
 class Item:
@@ -28,6 +33,12 @@ var _category: String = BirdCatalog.CATEGORY_BIRD
 var _selected: StringName = BirdCatalog.PIGEON
 var _busy: bool = false
 var _request_id: int = 0
+## Oggetto in attesa del secondo tocco su BUY (vuoto = nessuno) e tempo rimasto per darlo.
+var _confirm_id: StringName = &""
+var _confirm_left: float = 0.0
+## Icone delle schede mostrate ora, per aggiornarle quando arriva la foto.
+var _card_icons: Dictionary[StringName, TextureRect] = {}
+var _icons: ShopIcons
 
 var _bird: PigeonModel
 var _tabs: Dictionary[String, Button] = {}
@@ -55,11 +66,13 @@ func open(look: BirdLook) -> void:
 	_category = BirdCatalog.CATEGORY_BIRD
 	_selected = _equipped.species
 	_set_message("")
+	_confirm_id = &""
 	_fill_from_cache()
 	visible = true
 	set_process(true)
 	_refresh()
 	_back_button.grab_focus()
+	_request_icons()
 	_load()
 
 
@@ -68,12 +81,18 @@ func close() -> void:
 		return
 	visible = false
 	set_process(false)
+	_confirm_id = &""
 	closed.emit()
 
 
 func _process(delta: float) -> void:
 	_bird.rotation.y += delta * 0.6
 	_bird.flap(delta, 7.0, 0.55)
+	if not _confirm_id.is_empty():
+		_confirm_left -= delta
+		if _confirm_left <= 0.0:
+			_confirm_id = &""
+			_refresh()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -164,6 +183,7 @@ func _item(category: String, id: StringName) -> Item:
 
 func _select(id: StringName) -> void:
 	_selected = id
+	_confirm_id = &""
 	_preview_look.set_item(_category, id)
 	_bird.set_look(_preview_look)
 	_set_message("")
@@ -172,6 +192,7 @@ func _select(id: StringName) -> void:
 
 func _select_category(category: String) -> void:
 	_category = category
+	_confirm_id = &""
 	_selected = _equipped.get_item(category)
 	_preview_look = _equipped.duplicate_look()
 	_bird.set_look(_preview_look)
@@ -187,6 +208,13 @@ func _on_action() -> void:
 		look_changed.emit(_equipped.duplicate_look())
 		_refresh()
 		return
+	# primo tocco: chiede conferma, così un tocco per sbaglio non spende le briciole
+	if _confirm_id != _selected:
+		_confirm_id = _selected
+		_confirm_left = CONFIRM_SECONDS
+		_refresh()
+		return
+	_confirm_id = &""
 	_buy(item)
 
 
@@ -231,6 +259,7 @@ func _refresh() -> void:
 	for child in _grid.get_children():
 		_grid.remove_child(child)
 		child.queue_free()
+	_card_icons.clear()
 	var shown: Array[Item] = []
 	var none := _item(_category, BirdCatalog.NONE)
 	if none != null:
@@ -258,18 +287,24 @@ func _refresh() -> void:
 		var tier_name: String = {"common": "Common", "rare": "Rare", "special": "Special"}.get(selected.tier, "")
 		_item_info.text = str(tier_name) + ("  •  until %s" % selected.available_until.substr(0, 10) if not selected.available_until.is_empty() else "")
 		var affordable := balance >= selected.price
-		_action.text = "BUY  %s" % UiFormat.number(selected.price) if affordable else "NEED %s" % UiFormat.number(selected.price)
+		if not affordable:
+			_action.text = "NEED %s" % UiFormat.number(selected.price)
+		elif _confirm_id == _selected:
+			_action.text = "CONFIRM  %s?" % UiFormat.number(selected.price)
+		else:
+			_action.text = "BUY  %s" % UiFormat.number(selected.price)
 		_action.disabled = not affordable or not _online or _busy
+	_set_confirm_style(_confirm_id == _selected and _action.visible)
 
 
 func _make_card(item: Item) -> Button:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(196.0, 92.0)
+	card.custom_minimum_size = CARD_SIZE
 	card.focus_mode = Control.FOCUS_ALL
 	var selected := item.id == _selected
 	var tier_color: Color = TIER_COLORS.get(item.tier, TIER_COLORS["common"])
 	var bg := Color(1.0, 1.0, 1.0, 0.16) if selected else Color(1.0, 1.0, 1.0, 0.07)
-	var style := UiStyle.flat(bg, 14, 10.0)
+	var style := UiStyle.flat(bg, 14, 8.0)
 	style.border_color = tier_color if not item.owned or item.price > 0 else Color(1.0, 1.0, 1.0, 0.25)
 	style.set_border_width_all(4 if selected else 2)
 	for state: String in ["normal", "hover", "pressed", "focus"]:
@@ -277,10 +312,28 @@ func _make_card(item: Item) -> Button:
 	var box := VBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 4)
+	box.add_theme_constant_override("separation", 0)
 	card.add_child(box)
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var name_label := UiStyle.make_label(BirdCatalog.name_of(item.id), 22, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+
+	# icona 3D (arriva da ShopIcons, anche dopo); "nessuno" ha un trattino
+	if item.id == BirdCatalog.NONE:
+		var dash := UiStyle.make_label("—", 44, Color(1.0, 1.0, 1.0, 0.35), HORIZONTAL_ALIGNMENT_CENTER)
+		dash.custom_minimum_size = Vector2(0.0, ICON_SIZE)
+		dash.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		dash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(dash)
+	else:
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.texture = ShopIcons.get_icon(item.id)
+		box.add_child(icon)
+		_card_icons[item.id] = icon
+
+	var name_label := UiStyle.make_label(BirdCatalog.name_of(item.id), 19, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 	var status := ""
@@ -293,12 +346,38 @@ func _make_card(item: Item) -> Button:
 	else:
 		status = UiFormat.number(item.price)
 		status_color = Palette.GOLDEN_CRUMB
-	var status_label := UiStyle.make_label(status, 18, status_color, HORIZONTAL_ALIGNMENT_CENTER)
+	var status_label := UiStyle.make_label(status, 17, status_color, HORIZONTAL_ALIGNMENT_CENTER)
 	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(status_label)
 	var id := item.id
 	card.pressed.connect(func() -> void: _select(id))
 	return card
+
+
+## Pulsante verde con il testo bianco mentre aspetta il secondo tocco; altrimenti lo stile normale.
+func _set_confirm_style(confirming: bool) -> void:
+	var text_color := Color.WHITE if confirming else UiStyle.TEXT_DARK
+	for key: String in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		_action.add_theme_color_override(key, text_color)
+	var bg := CONFIRM_GREEN if confirming else UiStyle.ACCENT
+	_action.add_theme_stylebox_override("normal", UiStyle.flat(bg, 18))
+	_action.add_theme_stylebox_override("hover", UiStyle.flat(bg.lightened(0.15), 18))
+	_action.add_theme_stylebox_override("pressed", UiStyle.flat(bg.darkened(0.2), 18))
+
+
+## Prima le icone della categoria aperta, poi tutte le altre.
+func _request_icons() -> void:
+	var ids: Array[StringName] = BirdCatalog.ids_in(_category)
+	for id: StringName in BirdCatalog.ITEMS:
+		if not ids.has(id):
+			ids.append(id)
+	_icons.request(ids)
+
+
+func _on_icon_ready(id: StringName) -> void:
+	var icon: TextureRect = _card_icons.get(id)
+	if icon != null and is_instance_valid(icon):
+		icon.texture = ShopIcons.get_icon(id)
 
 
 func _set_message(text: String, color: Color = DIM) -> void:
@@ -369,6 +448,9 @@ func _build() -> void:
 	camera.look_at_from_position(Vector3(0.0, 1.15, 3.4), Vector3(0.0, 0.08, 0.0), Vector3.UP)
 	_bird = PigeonModel.new()
 	viewport.add_child(_bird)
+	_icons = ShopIcons.new()
+	add_child(_icons)
+	_icons.icon_ready.connect(_on_icon_ready)
 	_item_name = UiStyle.make_label("", 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	left.add_child(_item_name)
 	_item_info = UiStyle.make_label("", 20, DIM, HORIZONTAL_ALIGNMENT_CENTER)

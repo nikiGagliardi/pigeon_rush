@@ -78,7 +78,7 @@ Opzioni (dopo `--`):
 - **Impostazioni** (dal titolo e dalla pausa): volume, vibrazione, suggerimenti, informativa privacy, versione del gioco.
 - **DEVELOPER** (nelle impostazioni, per tarare la difficoltà): metri a cui la difficoltà arriva al massimo, curva, difficoltà di partenza e moltiplicatore del traffico, con l'anteprima della curva e la riga "SHOW IN HUD" (difficoltà e traffico in tempo reale durante la partita). Sempre visibile nelle build di debug; in quelle di rilascio (test interno da Play) si sblocca toccando 7 volte la versione in fondo alle impostazioni. Valori salvati in `user://dev_tuning.json`; con valori diversi dai default le partite non chiedono il ticket, quindi restano fuori classifica (e non contano per briciole d'oro e missioni). La prova automatica usa sempre i default.
 - **Briciole d'oro:** la valuta del gioco. Ogni tanto compare una **briciola d'oro** (più grande, alone chiaro, due anelli; la prima dopo 250 m, poi una ogni 300-600 m) che vale +50 punti e 5 briciole d'oro. A fine partita il server accredita 1 briciola ogni 100 m più 5 per ogni briciola d'oro raccolta, al massimo 200 a partita e 1500 al giorno, e solo per le partite iniziate online. Il game over mostra "+33 GOLDEN CRUMBS  •  total 1,250", il titolo il saldo. Si spendono nel negozio.
-- **Negozio** (titolo → SHOP): cinque schede (BIRD, FEATHERS, HEAD, FACE, NECK) che si combinano liberamente. Il piccione in 3D a sinistra prova ogni oggetto prima di comprarlo; EQUIP lo indossa, BUY lo compra e lo indossa subito.
+- **Negozio** (titolo → SHOP): cinque schede (BIRD, FEATHERS, HEAD, FACE, NECK) che si combinano liberamente. Il piccione in 3D a sinistra prova ogni oggetto prima di comprarlo; ogni scheda ha la sua icona 3D (fotografata a runtime da `ShopIcons`). EQUIP lo indossa; BUY va toccato due volte (diventa un "CONFIRM" verde per 4 s) e poi compra e indossa subito. Quando c'è qualcosa alla portata del saldo, sul pulsante SHOP del titolo compare un pallino dorato e nel game over un pulsante SHOP.
   - Fase 1: corvo (speciale); piumaggi Colomba, Notte, Svizzero (croce bianca sulle ali), Arcobaleno (collo e coda), Oro; cappelli Berretto, Tirolese, Cowboy, Casco da corsa, Corona; Occhiali da sole, Occhialoni da aviatore alzati sulla fronte; Sciarpa rossa, Campanaccio.
   - Prezzi e oggetti in vendita li decide il server (cambiabili senza aggiornare l'app); comprare richiede la rete, indossare quello che hai funziona anche offline.
   - Cambia solo l'aspetto: hitbox, mira e punto da cui cade la cacca restano quelli del piccione.
@@ -515,7 +515,7 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [x] 3 missioni giornaliere, nuove a mezzanotte UTC, verificate e riscosse sul server
 - [x] Statistiche per le missioni nell'invio della partita (`busHits`, `truckHits`, `nightDistance`, `goldenCrumbs`) con controlli di coerenza sul server
 - [x] Negozio (fase 1): corvo, piumaggi e accessori per testa, faccia e collo, con agganci uguali per tutte le specie; catalogo e acquisti sul server
-- [ ] Negozio (fase 2): scia, splat, altri uccelli (gallina, aquila compatta, gabbiano, gufo)
+- [ ] Negozio (fase 2): scia, splat, altri uccelli (gallina, aquila compatta, gabbiano, gufo); leggendari: unicorno, maiale volante
 - [ ] Scelta della tratta di partenza (sbloccata raggiungendola, pagata con le briciole)
 - [ ] Cambio di una missione del giorno con le briciole
 - [ ] "Doppio bottino" con pubblicità a premio (Fase 7, con la verifica SSV)

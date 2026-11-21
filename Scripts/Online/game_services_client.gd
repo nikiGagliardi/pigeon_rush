@@ -20,6 +20,8 @@ signal queue_stalled
 signal wallet_changed(new_balance: int)
 ## Oggetti posseduti cambiati (negozio letto, acquisto, account cancellato).
 signal owned_changed
+## Cambiato il catalogo noto (oggetti in vendita e posseduti): per il pallino su SHOP.
+signal shop_changed
 ## Missioni lette dal server: titoli di quelle completate da riscuotere che prima non lo erano.
 signal missions_updated(newly_complete: PackedStringArray)
 
@@ -46,6 +48,8 @@ var balance: int = -1
 var claimable_missions: int = 0
 ## Id degli oggetti comprati (gli oggetti gratuiti non ci sono: sono di tutti). Ultimo valore dal server.
 var owned_items: PackedStringArray = PackedStringArray()
+## Ultimo catalogo ricevuto: id → prezzo degli oggetti in vendita e non ancora posseduti (salvato).
+var shop_prices: Dictionary[String, int] = {}
 
 ## Solo per la prova automatica.
 var tickets_received: int = 0
@@ -84,12 +88,14 @@ static func ensure(tree: SceneTree, smoke_test: bool) -> GameServicesClient:
 		instance.enabled = not custom_url.is_empty()
 		instance._file_path = SMOKE_FILE_PATH
 		DirAccess.remove_absolute(SMOKE_FILE_PATH)
+	# subito, non in _ready: Main chiede saldo e missioni prima che il client entri nell'albero, e senza
+	# il token salvato _ensure_account creerebbe un account nuovo
+	instance._load()
 	tree.root.add_child.call_deferred(instance)
 	return instance
 
 
 func _ready() -> void:
-	_load()
 	if enabled:
 		_ensure_account_then_flush()
 
@@ -313,15 +319,36 @@ func _apply_shop(body: Dictionary) -> void:
 	if not items is Array:
 		return
 	var owned := PackedStringArray()
+	var prices: Dictionary[String, int] = {}
 	for raw: Variant in items as Array:
 		if raw is Dictionary:
 			var item := raw as Dictionary
-			if item.get("owned", false) == true and int(item.get("price", 0)) > 0:
+			var price := int(item.get("price", 0))
+			if price <= 0:
+				continue
+			if item.get("owned", false) == true:
 				owned.append(str(item.get("id", "")))
-	if owned != owned_items:
-		owned_items = owned
-		_save()
+			else:
+				prices[str(item.get("id", ""))] = price
+	var owned_differs := owned != owned_items
+	if not owned_differs and prices == shop_prices:
+		return
+	owned_items = owned
+	shop_prices = prices
+	_save()
+	if owned_differs:
 		owned_changed.emit()
+	shop_changed.emit()
+
+
+## C'è almeno un oggetto che questa versione sa disegnare, non posseduto e alla portata del saldo noto.
+func can_afford_new_item() -> bool:
+	if balance <= 0:
+		return false
+	for id: String in shop_prices:
+		if shop_prices[id] <= balance and BirdCatalog.knows(StringName(id)):
+			return true
+	return false
 
 
 ## Secondi al prossimo cambio di missioni (mezzanotte UTC, come il server).
@@ -397,6 +424,7 @@ func delete_account() -> bool:
 	account_changed.emit()
 	wallet_changed.emit(balance)
 	owned_changed.emit()
+	shop_changed.emit()
 	return true
 
 
@@ -446,6 +474,7 @@ func _forget_account() -> void:
 	balance = -1
 	claimable_missions = 0
 	owned_items = PackedStringArray()
+	shop_prices.clear()
 	_complete_ids.clear()
 
 
@@ -476,6 +505,8 @@ class Response:
 func _request(method: HTTPClient.Method, path: String, body: Variant, auth: bool, timeout: float) -> Response:
 	var http := HTTPRequest.new()
 	http.timeout = timeout
+	if not is_inside_tree():
+		await tree_entered # appena creato da ensure() il client entra nell'albero al frame dopo
 	add_child(http)
 	var headers := PackedStringArray(["Accept: application/json"])
 	var data := ""
@@ -526,6 +557,7 @@ func _save() -> void:
 		"name_suffix": name_suffix,
 		"balance": balance,
 		"owned_items": Array(owned_items),
+		"shop_prices": shop_prices,
 		"queue": _queue,
 	}, "\t"))
 	file.close()
@@ -550,6 +582,12 @@ func _load() -> void:
 	if saved_owned is Array:
 		for id: Variant in saved_owned as Array:
 			owned_items.append(str(id))
+	var saved_prices: Variant = d.get("shop_prices", {})
+	if saved_prices is Dictionary:
+		for id: Variant in saved_prices as Dictionary:
+			var price: Variant = (saved_prices as Dictionary)[id]
+			if price is float or price is int:
+				shop_prices[str(id)] = int(price)
 	var saved_balance: Variant = d.get("balance", null)
 	if saved_balance is float:
 		balance = int(saved_balance as float)

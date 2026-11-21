@@ -82,6 +82,9 @@ class Species:
 	var tail_center_extra: float = 0.0
 	## Grandezza degli accessori rispetto a quelli disegnati per il piccione.
 	var accessory_scale: float = 1.0
+	## Look "cattivo": forme a faccette, becco squadrato e uncinato, sopracciglia aggrottate,
+	## ciuffi sulla nuca, gola arruffata, remiganti a dita e coda a penne dritte.
+	var fierce: bool = false
 
 
 static func species(id: StringName) -> Species:
@@ -90,12 +93,13 @@ static func species(id: StringName) -> Species:
 	if id == &"crow":
 		s.body_scale = Vector3(0.96, 0.94, 1.08)
 		s.head_scale = 1.04
-		s.beak_length = 0.21
-		s.beak_radius = 0.05
+		s.beak_length = 0.2
+		s.beak_radius = 0.036
 		s.has_cere = false
 		s.tail_spread = 6.0
 		s.tail_center_extra = 0.08
 		s.accessory_scale = 1.04
+		s.fierce = true
 	else:
 		s.id = PIGEON
 	return s
@@ -145,12 +149,12 @@ static func plumage(species_id: StringName, plumage_id: StringName) -> Dictionar
 static func _natural(species_id: StringName) -> Dictionary:
 	if species_id == &"crow":
 		return {
-			"body": Color("23262d"), "belly": Color("2a2d35"), "chest": Color("262a31"), "neck": Color("2c3550"),
-			"neck2": Color("3a2f52"), "head": Color("23262d"), "rump": Color("2d3039"), "wing": Color("272b33"),
+			"body": Color("23262d"), "belly": Color("2a2d35"), "chest": Color("262a31"), "neck": Color("262b3a"),
+			"neck2": Color("2b2735"), "head": Color("23262d"), "rump": Color("2d3039"), "wing": Color("272b33"),
 			"bar": Color("1b1e24"), "primary_dark": Color("14161a"), "primary_mid": Color("1b1e23"),
 			"primary_light": Color("23262c"), "secondary": Color("1f2228"), "tail": Color("1c1f25"),
 			"tail_band": Color("15171b"), "beak": Color("4a4e57"), "beak_tip": Color("2a2c31"),
-			"cere": Color("1c1c1e"), "eye_ring": Color("2a2d35"), "eye": Color("2b1d14"), "pupil": Color("0a0a0a"),
+			"cere": Color("1c1c1e"), "eye_ring": Color("1a1c21"), "eye": Color("d9a728"), "pupil": Color("0a0a0a"),
 			"foot": Color("1c1c1e"),
 		}
 	return {

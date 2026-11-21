@@ -48,6 +48,11 @@ var _leaderboard_button: Button
 var _missions: MissionsPanel
 var _missions_button: Button
 var _shop_button: Button
+## Pallino dorato sul pulsante SHOP: c'è qualcosa che puoi permetterti.
+var _shop_dot: Panel
+var _over_shop_button: Button
+## Schermata da cui si è aperto il negozio (titolo o game over), a cui si torna.
+var _shop_return: Control
 var _title_crumbs: Label
 var _title_start: Label
 var _over_crumbs: Label
@@ -109,15 +114,25 @@ func _on_leaderboard_closed() -> void:
 	_leaderboard_button.grab_focus()
 
 
-## Dal titolo: negozio; "BACK" riporta al titolo.
+## Dal titolo o dal game over: negozio; "BACK" riporta lì.
 func show_shop(look: BirdLook) -> void:
-	_title.visible = false
+	_shop_return = _game_over if _game_over.visible else _title
+	_shop_return.visible = false
 	shop.open(look)
 
 
 func _on_shop_closed() -> void:
-	_title.visible = true
-	_shop_button.grab_focus()
+	if _shop_return == null:
+		return
+	_shop_return.visible = true
+	(_retry_button if _shop_return == _game_over else _shop_button).grab_focus()
+	_shop_return = null
+
+
+## Qualcosa di nuovo alla portata del saldo: pallino su SHOP nel titolo e pulsante SHOP nel game over.
+func set_shop_affordable(affordable: bool) -> void:
+	_shop_dot.visible = affordable
+	_over_shop_button.visible = affordable
 
 
 ## Dal titolo: missioni del giorno; "BACK" riporta al titolo.
@@ -336,6 +351,16 @@ func _build_title() -> void:
 	var bottom := _title_row(box)
 	_shop_button = _title_button(bottom, "SHOP", 208.0)
 	_shop_button.pressed.connect(func() -> void: shop_pressed.emit())
+	_shop_dot = Panel.new()
+	var dot_style := UiStyle.flat(Palette.GOLDEN_CRUMB, 11, 0.0)
+	dot_style.border_color = Color(0.0, 0.0, 0.0, 0.45)
+	dot_style.set_border_width_all(2)
+	_shop_dot.add_theme_stylebox_override("panel", dot_style)
+	_shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shop_dot.size = Vector2(22.0, 22.0)
+	_shop_dot.position = Vector2(208.0 - 16.0, -6.0)
+	_shop_dot.visible = false
+	_shop_button.add_child(_shop_dot)
 	_leaderboard_button = _title_button(bottom, "LEADERBOARD", 208.0)
 	_leaderboard_button.pressed.connect(show_leaderboard)
 	_settings_button = _title_button(bottom, "SETTINGS", 208.0)
@@ -417,6 +442,11 @@ func _build_game_over() -> void:
 	_retry_button = UiStyle.make_button("TRY AGAIN")
 	_retry_button.pressed.connect(func() -> void: retry_pressed.emit())
 	actions.add_child(_retry_button)
+	_over_shop_button = UiStyle.make_button("SHOP")
+	_over_shop_button.custom_minimum_size = Vector2(200.0, 84.0)
+	_over_shop_button.pressed.connect(func() -> void: shop_pressed.emit())
+	_over_shop_button.visible = false
+	actions.add_child(_over_shop_button)
 	var menu := UiStyle.make_button("MENU")
 	menu.custom_minimum_size = Vector2(220.0, 84.0)
 	menu.pressed.connect(func() -> void: menu_pressed.emit())
