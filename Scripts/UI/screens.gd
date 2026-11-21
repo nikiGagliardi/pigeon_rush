@@ -13,9 +13,12 @@ signal retry_pressed
 signal menu_pressed
 ## "SETTINGS" dal titolo o dalla pausa: Main apre il pannello con i valori salvati (open_settings).
 signal settings_pressed
+## Dal titolo: Main apre il negozio con quello che indossa il piccione (show_shop).
+signal shop_pressed
 
 ## Impostazioni: Main ascolta changed / tips_reset / closed.
 var settings: SettingsPanel
+var shop: ShopPanel
 signal continue_accepted
 signal continue_declined
 
@@ -44,6 +47,7 @@ var _leaderboard: LeaderboardPanel
 var _leaderboard_button: Button
 var _missions: MissionsPanel
 var _missions_button: Button
+var _shop_button: Button
 var _title_crumbs: Label
 var _title_start: Label
 var _over_crumbs: Label
@@ -73,6 +77,9 @@ func _ready() -> void:
 	_missions = MissionsPanel.new()
 	add_child(_missions)
 	_missions.closed.connect(_on_missions_closed)
+	shop = ShopPanel.new()
+	add_child(shop)
+	shop.closed.connect(_on_shop_closed)
 	settings = SettingsPanel.new()
 	add_child(settings)
 	settings.closed.connect(_on_settings_closed)
@@ -100,6 +107,17 @@ func show_leaderboard() -> void:
 func _on_leaderboard_closed() -> void:
 	_title.visible = true
 	_leaderboard_button.grab_focus()
+
+
+## Dal titolo: negozio; "BACK" riporta al titolo.
+func show_shop(look: BirdLook) -> void:
+	_title.visible = false
+	shop.open(look)
+
+
+func _on_shop_closed() -> void:
+	_title.visible = true
+	_shop_button.grab_focus()
 
 
 ## Dal titolo: missioni del giorno; "BACK" riporta al titolo.
@@ -147,6 +165,9 @@ func close_panel() -> bool:
 		return true
 	if _missions.visible:
 		_missions.close()
+		return true
+	if shop.visible:
+		shop.close()
 		return true
 	if _leaderboard.visible:
 		_leaderboard.close()
@@ -304,7 +325,7 @@ func _build_title() -> void:
 	records.add_child(_title_crumbs)
 	set_title_crumbs(-1)
 
-	# DAILY CHALLENGE | MISSIONS  /  LEADERBOARD | SETTINGS
+	# DAILY CHALLENGE | MISSIONS  /  SHOP | LEADERBOARD | SETTINGS
 	var top := _title_row(box)
 	_daily_button = _title_button(top, "DAILY CHALLENGE")
 	_daily_button.pressed.connect(func() -> void: daily_pressed.emit())
@@ -313,9 +334,11 @@ func _build_title() -> void:
 	_title_daily = UiStyle.make_label("", 20, Color(1.0, 1.0, 1.0, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_title_daily)
 	var bottom := _title_row(box)
-	_leaderboard_button = _title_button(bottom, "LEADERBOARD")
+	_shop_button = _title_button(bottom, "SHOP", 208.0)
+	_shop_button.pressed.connect(func() -> void: shop_pressed.emit())
+	_leaderboard_button = _title_button(bottom, "LEADERBOARD", 208.0)
 	_leaderboard_button.pressed.connect(show_leaderboard)
-	_settings_button = _title_button(bottom, "SETTINGS")
+	_settings_button = _title_button(bottom, "SETTINGS", 208.0)
 	_settings_button.pressed.connect(func() -> void: settings_pressed.emit())
 
 	var help := "Left side: drag to fly  •  Right side: tap to drop" if TouchControls.is_touch_device() \
@@ -334,9 +357,9 @@ func _title_row(box: VBoxContainer) -> HBoxContainer:
 	return row
 
 
-func _title_button(row: HBoxContainer, text: String) -> Button:
-	var button := UiStyle.make_button(text, 26)
-	button.custom_minimum_size = Vector2(320.0, 60.0)
+func _title_button(row: HBoxContainer, text: String, width: float = 320.0) -> Button:
+	var button := UiStyle.make_button(text, 26 if width >= 300.0 else 24)
+	button.custom_minimum_size = Vector2(width, 60.0)
 	row.add_child(button)
 	return button
 

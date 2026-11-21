@@ -1,17 +1,23 @@
 class_name FloatingTextPool
 extends Node3D
-## Testi 3D che salgono e svaniscono (+punti, "Close call!", ecc.).
+## Testi 3D (+punti, "Close call!", ecc.) che compaiono con un piccolo scatto e scivolano in basso, verso la
+## camera, come se restassero sulla strada già passata: sotto il piccione, mai davanti a dove si guarda.
 
 
 class Entry:
 	var label: Label3D
 	var color: Color = Color.WHITE
 	var age: float = 0.0
+	var size: float = 0.008
 	var life: float = 1.0
 	var active: bool = false
 
 
 const POOL_SIZE := 12
+## Metri al secondo: verso il basso e verso la camera (+Z), cioè in basso sullo schermo.
+const DRIFT := Vector3(0.0, -1.1, 4.0)
+## Lo scatto iniziale: parte al 70% della grandezza e arriva al 100% in questo tempo.
+const POP_TIME := 0.12
 
 var _entries: Array[Entry] = []
 
@@ -31,16 +37,17 @@ func _ready() -> void:
 		_entries.append(entry)
 
 
-func spawn(text: String, color: Color, p_position: Vector3, scale_factor: float = 1.0, life: float = 0.9) -> void:
+func spawn(text: String, color: Color, p_position: Vector3, scale_factor: float = 1.0, life: float = 0.75) -> void:
 	var entry := _get_free()
 	entry.active = true
 	entry.age = 0.0
 	entry.life = life
 	entry.color = color
+	entry.size = 0.008 * scale_factor
 
 	var label := entry.label
 	label.text = text
-	label.pixel_size = 0.008 * scale_factor
+	label.pixel_size = entry.size * 0.7
 	label.position = p_position
 	label.modulate = color
 	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.85)
@@ -58,7 +65,8 @@ func tick(dt: float) -> void:
 			entry.label.visible = false
 			continue
 		var label := entry.label
-		label.position += Vector3(0.0, 2.2 * dt, 0.0)
+		label.position += DRIFT * dt
+		label.pixel_size = entry.size * (0.7 + 0.3 * minf(entry.age / POP_TIME, 1.0))
 		var alpha := 1.0 if t < 0.6 else 1.0 - (t - 0.6) / 0.4
 		label.modulate = Color(entry.color, alpha)
 		label.outline_modulate = Color(0.0, 0.0, 0.0, 0.85 * alpha)

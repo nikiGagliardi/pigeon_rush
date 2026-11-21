@@ -4,6 +4,8 @@ extends Node3D
 ## Resta sempre a Z = 0: è il mondo a venirgli incontro.
 
 var velocity: Vector3 = Vector3.ZERO
+## Aspetto dal negozio (impostarlo prima di add_child, oppure set_look dopo). La hitbox non dipende da questo.
+var look: BirdLook = null
 
 var _model: PigeonModel
 var _shadow: MeshInstance3D
@@ -17,7 +19,7 @@ func bounds() -> AABB:
 func _ready() -> void:
 	position = Vector3(0.0, GameConfig.PIGEON_START_Y, 0.0)
 
-	_model = PigeonModel.new()
+	_model = PigeonModel.new(look)
 	add_child(_model)
 
 	var blob := CylinderMesh.new()
@@ -33,6 +35,12 @@ func _ready() -> void:
 	_shadow.top_level = true
 	add_child(_shadow)
 	_update_shadow()
+
+
+func set_look(p_look: BirdLook) -> void:
+	look = p_look
+	if _model != null:
+		_model.set_look(p_look)
 
 
 ## input: direzione desiderata, componenti in [-1, 1] (Y positivo = su).

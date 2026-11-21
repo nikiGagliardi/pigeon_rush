@@ -24,6 +24,10 @@ var vibration: bool = true
 # suggerimenti delle prime partite già mostrati (vedi TutorialHints)
 var hints_seen: PackedStringArray = PackedStringArray()
 
+## Cosa indossa il piccione (negozio). Si controlla contro gli oggetti posseduti (GameServicesClient.owned_items)
+## prima di usarlo: un oggetto non posseduto torna al valore gratuito.
+var bird_look: BirdLook = BirdLook.new()
+
 
 static func load_or_default() -> SaveData:
 	if FileAccess.file_exists(FILE_PATH):
@@ -98,6 +102,7 @@ func to_dict() -> Dictionary:
 		"tutorial": {
 			"seen": Array(hints_seen),
 		},
+		"bird": bird_look.to_dict(),
 	}
 
 
@@ -129,6 +134,11 @@ static func from_dict(d: Dictionary) -> SaveData:
 			for id: Variant in seen as Array:
 				if id is String and not data.hints_seen.has(id as String):
 					data.hints_seen.append(id as String)
+
+	# "bird" manca nei salvataggi più vecchi: piccione classico
+	var raw_bird: Variant = d.get("bird", {})
+	if raw_bird is Dictionary:
+		data.bird_look = BirdLook.from_dict(raw_bird as Dictionary)
 	return data
 
 

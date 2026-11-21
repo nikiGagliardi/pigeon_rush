@@ -1,7 +1,8 @@
 class_name GameServicesClient
 extends Node
 ## Client del server dei giochi (game-services, https://api.moesagames.ch): account anonimo, ticket di partita,
-## invio dei risultati con coda offline, classifiche mondiali, saldo delle briciole d'oro e missioni giornaliere. Il gioco non aspetta mai la rete:
+## invio dei risultati con coda offline, classifiche mondiali, saldo delle briciole d'oro, missioni giornaliere
+## e negozio (oggetti posseduti in cache per poterli indossare anche offline). Il gioco non aspetta mai la rete:
 ## senza connessione si gioca uguale e le partite partono alla prima occasione.
 ##
 ## Come Ads, vive sotto la radice del tree: resta valido quando "Try again" ricarica la scena.
@@ -17,6 +18,8 @@ signal ticket_settled
 signal queue_stalled
 ## Nuovo saldo ricevuto dal server (dopo una partita, le missioni o fetch_wallet).
 signal wallet_changed(new_balance: int)
+## Oggetti posseduti cambiati (negozio letto, acquisto, account cancellato).
+signal owned_changed
 ## Missioni lette dal server: titoli di quelle completate da riscuotere che prima non lo erano.
 signal missions_updated(newly_complete: PackedStringArray)
 
@@ -41,6 +44,8 @@ var name_suffix: int = 0
 var balance: int = -1
 ## Missioni di oggi completate e non riscosse (dall'ultima lettura delle missioni).
 var claimable_missions: int = 0
+## Id degli oggetti comprati (gli oggetti gratuiti non ci sono: sono di tutti). Ultimo valore dal server.
+var owned_items: PackedStringArray = PackedStringArray()
 
 ## Solo per la prova automatica.
 var tickets_received: int = 0
@@ -279,6 +284,46 @@ func claim_mission(mission_id: String) -> Response:
 	return response
 
 
+## Catalogo del negozio per questa versione del gioco: data().items [{id, category, price, tier, owned,
+## availableUntil}] e data().balance. Crea l'account se manca.
+func fetch_shop() -> Response:
+	if not enabled or not await _ensure_account():
+		return Response.failed()
+	var path := "/v1/games/%s/shop?version=%s" % [GAME_SLUG, game_version().uri_encode()]
+	var response := await _request(HTTPClient.METHOD_GET, path, null, true, REQUEST_TIMEOUT)
+	if response.ok:
+		_apply_shop(response.data())
+	return response
+
+
+## Compra un oggetto (risposta come fetch_shop). 409 = briciole insufficienti, 404 = non più in vendita.
+func buy_item(item_id: String) -> Response:
+	if not enabled or not await _ensure_account():
+		return Response.failed()
+	var body := {"itemId": item_id, "version": game_version()}
+	var response := await _request(HTTPClient.METHOD_POST, "/v1/games/%s/shop/buy" % GAME_SLUG, body, true, REQUEST_TIMEOUT)
+	if response.ok:
+		_apply_shop(response.data())
+	return response
+
+
+func _apply_shop(body: Dictionary) -> void:
+	_apply_balance(body)
+	var items: Variant = body.get("items", [])
+	if not items is Array:
+		return
+	var owned := PackedStringArray()
+	for raw: Variant in items as Array:
+		if raw is Dictionary:
+			var item := raw as Dictionary
+			if item.get("owned", false) == true and int(item.get("price", 0)) > 0:
+				owned.append(str(item.get("id", "")))
+	if owned != owned_items:
+		owned_items = owned
+		_save()
+		owned_changed.emit()
+
+
 ## Secondi al prossimo cambio di missioni (mezzanotte UTC, come il server).
 static func seconds_to_missions_reset() -> int:
 	var now := int(Time.get_unix_time_from_system())
@@ -351,6 +396,7 @@ func delete_account() -> bool:
 	_save()
 	account_changed.emit()
 	wallet_changed.emit(balance)
+	owned_changed.emit()
 	return true
 
 
@@ -399,6 +445,7 @@ func _forget_account() -> void:
 	name_suffix = 0
 	balance = -1
 	claimable_missions = 0
+	owned_items = PackedStringArray()
 	_complete_ids.clear()
 
 
@@ -478,6 +525,7 @@ func _save() -> void:
 		"display_name": display_name,
 		"name_suffix": name_suffix,
 		"balance": balance,
+		"owned_items": Array(owned_items),
 		"queue": _queue,
 	}, "\t"))
 	file.close()
@@ -498,6 +546,10 @@ func _load() -> void:
 		"displayName": d.get("display_name", ""),
 		"nameSuffix": d.get("name_suffix", 0),
 	})
+	var saved_owned: Variant = d.get("owned_items", [])
+	if saved_owned is Array:
+		for id: Variant in saved_owned as Array:
+			owned_items.append(str(id))
 	var saved_balance: Variant = d.get("balance", null)
 	if saved_balance is float:
 		balance = int(saved_balance as float)

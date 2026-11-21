@@ -77,7 +77,11 @@ Opzioni (dopo `--`):
 - **Suggerimenti delle prime partite:** compaiono sopra le munizioni nel momento in cui servono (comandi di volo, primo mirino, primo colpo, primo passaggio a filo, munizioni sotto 3, volo radente dopo 25 s), una volta sola ciascuno. "SHOW TIPS AGAIN" nelle impostazioni li fa ricomparire.
 - **Impostazioni** (dal titolo e dalla pausa): volume, vibrazione, suggerimenti, informativa privacy, versione del gioco.
 - **DEVELOPER** (nelle impostazioni, per tarare la difficoltà): metri a cui la difficoltà arriva al massimo, curva, difficoltà di partenza e moltiplicatore del traffico, con l'anteprima della curva e la riga "SHOW IN HUD" (difficoltà e traffico in tempo reale durante la partita). Sempre visibile nelle build di debug; in quelle di rilascio (test interno da Play) si sblocca toccando 7 volte la versione in fondo alle impostazioni. Valori salvati in `user://dev_tuning.json`; con valori diversi dai default le partite non chiedono il ticket, quindi restano fuori classifica (e non contano per briciole d'oro e missioni). La prova automatica usa sempre i default.
-- **Briciole d'oro:** la valuta del gioco. Ogni tanto compare una **briciola d'oro** (più grande, alone chiaro, due anelli; la prima dopo 250 m, poi una ogni 300-600 m) che vale +50 punti e 5 briciole d'oro. A fine partita il server accredita 1 briciola ogni 100 m più 5 per ogni briciola d'oro raccolta, al massimo 200 a partita e 1500 al giorno, e solo per le partite iniziate online. Il game over mostra "+33 GOLDEN CRUMBS  •  total 1,250", il titolo il saldo. Per ora si accumulano: il negozio arriverà più avanti.
+- **Briciole d'oro:** la valuta del gioco. Ogni tanto compare una **briciola d'oro** (più grande, alone chiaro, due anelli; la prima dopo 250 m, poi una ogni 300-600 m) che vale +50 punti e 5 briciole d'oro. A fine partita il server accredita 1 briciola ogni 100 m più 5 per ogni briciola d'oro raccolta, al massimo 200 a partita e 1500 al giorno, e solo per le partite iniziate online. Il game over mostra "+33 GOLDEN CRUMBS  •  total 1,250", il titolo il saldo. Si spendono nel negozio.
+- **Negozio** (titolo → SHOP): cinque schede (BIRD, FEATHERS, HEAD, FACE, NECK) che si combinano liberamente. Il piccione in 3D a sinistra prova ogni oggetto prima di comprarlo; EQUIP lo indossa, BUY lo compra e lo indossa subito.
+  - Fase 1: corvo (speciale); piumaggi Colomba, Notte, Svizzero (croce bianca sulle ali), Arcobaleno (collo e coda), Oro; cappelli Berretto, Tirolese, Cowboy, Casco da corsa, Corona; Occhiali da sole, Occhialoni da aviatore alzati sulla fronte; Sciarpa rossa, Campanaccio.
+  - Prezzi e oggetti in vendita li decide il server (cambiabili senza aggiornare l'app); comprare richiede la rete, indossare quello che hai funziona anche offline.
+  - Cambia solo l'aspetto: hitbox, mira e punto da cui cade la cacca restano quelli del piccione.
 - **Missioni giornaliere:** dal titolo, "MISSIONS". Tre obiettivi al giorno uguali per tutti (per esempio "Splat 4 buses", "Fly 1500 m at night", "Fly today's challenge"), nuovi a mezzanotte UTC. Contano le partite iniziate online; il progresso lo calcola il server. Una missione completa si riscuote con "CLAIM" (30-90 briciole d'oro). Il pulsante del titolo mostra quante ce ne sono da riscuotere ("MISSIONS (1)") e il game over avvisa quando una partita ne completa una.
 - **Classifica mondiale:** nel game over la posizione ("WORLD #1,234  •  THIS WEEK #56"); "NEW WORLD RECORD!" quando la partita porta in testa alla classifica di sempre, "#1 IN TODAY'S CHALLENGE!" in quella del giorno.
 - **Difficoltà:** cresce con i metri percorsi, non col tempo: in fretta all'inizio, poi più piano, fino al massimo verso la fine del primo giro (14% a 1 km, 57% all'ingresso nel Mittelland, 100% a 12 km). Il traffico più fitto del primo giro è nella discesa del San Bernardino. Dal secondo giro c'è in più il traffico extra dei giri. La velocità base sale da 16 a 30 m/s. Ogni tratta ha il suo profilo: traffico più o meno fitto, più o meno camion, più gallerie o più cantieri.
@@ -121,7 +125,10 @@ Scripts/
 │   └── palette.gd           Colori e materiali condivisi
 ├── Player/
 │   ├── pigeon_controller.gd Movimento X/Y con inerzia, inclinazione, caduta finale
-│   ├── pigeon_model.gd      Piccione procedurale con ali animate
+│   ├── pigeon_model.gd      Uccello procedurale con ali animate: specie e piumaggio da BirdLook, agganci per gli accessori
+│   ├── bird_catalog.gd      Specie, piumaggi e accessori disegnabili (id del negozio)
+│   ├── bird_look.gd         Cosa indossa il piccione (salvato), controllato contro gli oggetti posseduti
+│   ├── bird_accessories.gd  Cappelli, occhiali, sciarpa, campanaccio, costruiti attorno al loro aggancio
 │   └── poop_system.gd       Mirino, traiettoria d'intercetto, macchie
 ├── World/
 │   ├── traffic_spawner.gd   File di traffico, strutture, raccoglibili, collisioni
@@ -146,7 +153,7 @@ Scripts/
 ├── CameraRig/chase_camera.gd Inseguimento, FOV dinamico, shake
 ├── Effects/                 Testi fluttuanti, esplosione di piume, pioggia e neve attorno alla camera
 └── UI/                      HUD (con i suggerimenti), controlli touch, schermate (titolo, pausa, "Continue?", game over, countdown),
-                             classifica mondiale, missioni giornaliere, impostazioni
+                             classifica mondiale, missioni giornaliere, negozio con anteprima 3D, impostazioni (e DEVELOPER)
 ```
 
 Convenzioni GDScript: file in `snake_case`, `class_name` in `PascalCase`, costanti in `MAIUSCOLO`, eventi come **segnali** (`pigeon_hit`, `vehicle_warned`…), cache statiche con `static var`.
@@ -507,7 +514,10 @@ L'ordine segue le dipendenze. Il Continua viene prima perché è il cuore della 
 - [x] Nel gioco: saldo solo come copia del server (titolo, game over, missioni); le partite offline valgono 0
 - [x] 3 missioni giornaliere, nuove a mezzanotte UTC, verificate e riscosse sul server
 - [x] Statistiche per le missioni nell'invio della partita (`busHits`, `truckHits`, `nightDistance`, `goldenCrumbs`) con controlli di coerenza sul server
-- [ ] *Da progettare:* skin del piccione e negozio (cosa vendere, aspetto, prezzi), acquisti tramite il server e solo online
+- [x] Negozio (fase 1): corvo, piumaggi e accessori per testa, faccia e collo, con agganci uguali per tutte le specie; catalogo e acquisti sul server
+- [ ] Negozio (fase 2): scia, splat, altri uccelli (gallina, aquila compatta, gabbiano, gufo)
+- [ ] Scelta della tratta di partenza (sbloccata raggiungendola, pagata con le briciole)
+- [ ] Cambio di una missione del giorno con le briciole
 - [ ] "Doppio bottino" con pubblicità a premio (Fase 7, con la verifica SSV)
 - [ ] *Da decidere:* secondo Continua con le briciole, legato al ticket della partita
 

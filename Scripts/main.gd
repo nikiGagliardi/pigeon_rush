@@ -122,6 +122,7 @@ func _ready() -> void:
 	online.run_result.connect(_on_online_run_result)
 	online.queue_stalled.connect(_on_online_stalled)
 	online.missions_updated.connect(_on_missions_updated)
+	online.owned_changed.connect(_on_owned_changed)
 
 	var world_environment := SceneryFactory.create_environment()
 	_environment = world_environment.environment
@@ -146,6 +147,7 @@ func _ready() -> void:
 	add_child(_ambient)
 
 	_pigeon = PigeonController.new()
+	_pigeon.look = _owned_look()
 	add_child(_pigeon)
 
 	_poop = PoopSystem.new()
@@ -207,6 +209,8 @@ func _ready() -> void:
 	_poop.vehicle_hit.connect(_on_vehicle_hit)
 	_poop.road_hit.connect(_on_poop_road_hit)
 	online.wallet_changed.connect(_screens.set_title_crumbs)
+	_screens.shop_pressed.connect(func() -> void: _screens.show_shop(_owned_look()))
+	_screens.shop.look_changed.connect(_on_look_changed)
 
 	if _skip_title_on_load or _smoke_test:
 		_skip_title_on_load = false
@@ -224,6 +228,25 @@ func _ready() -> void:
 		_show_route_scenery(RouteTracker.new(_title_setup.seed, _title_setup.start_segment))
 		_screens.show_title(_save.best_score, _daily_info(), "From %s" % RouteData.get_segment(_title_setup.start_segment).name)
 		_refresh_title_online(online)
+
+
+## Cosa indossa il piccione, senza gli oggetti che non risultano posseduti (account nuovo, cancellato).
+func _owned_look() -> BirdLook:
+	var look := _save.bird_look.duplicate_look()
+	var online := GameServicesClient.instance
+	look.keep_owned(Array(online.owned_items) if online != null else [])
+	return look
+
+
+func _on_owned_changed() -> void:
+	if _pigeon != null:
+		_pigeon.set_look(_owned_look())
+
+
+func _on_look_changed(look: BirdLook) -> void:
+	_save.bird_look = look
+	_save.save()
+	_pigeon.set_look(_owned_look())
 
 
 ## Saldo e missioni nel titolo: subito l'ultimo valore noto, poi quello del server (se c'è rete).
@@ -603,7 +626,7 @@ func _try_poop() -> void:
 	if _session.ammo <= 0:
 		_audio.play(Sfx.UI_CLICK, 0.0, 0.6) # "clic a vuoto"
 		if _no_ammo_cooldown <= 0.0:
-			_texts.spawn("Out of poop! Grab some crumbs", Palette.DANGER, _pigeon.position + Vector3(0.0, 1.2, -2.0), 0.6, 1.2)
+			_hud.show_alert("Out of poop! Grab some crumbs")
 			_no_ammo_cooldown = 1.2
 		return
 
@@ -641,9 +664,10 @@ func _on_vehicle_hit(vehicle: Vehicle, p_position: Vector3) -> void:
 	_session.speed.add_boost(vehicle.spec.boost)
 	_hint(TutorialHints.BOOST)
 
-	_texts.spawn("+%d" % points, Palette.GOLD, p_position + Vector3(0.0, 1.0, 0.0), 1.2)
+	# sul mezzo colpito, poi giù verso la camera insieme a lui: mai sopra la strada che arriva
+	_texts.spawn("+%d" % points, Palette.GOLD, p_position + Vector3(0.0, 0.4, 0.0), 1.2)
 	if not vehicle.spec.hit_label.is_empty():
-		_texts.spawn(vehicle.spec.hit_label, Color.WHITE, p_position + Vector3(0.0, 2.2, 0.0), 0.7, 1.1)
+		_texts.spawn(vehicle.spec.hit_label, Color.WHITE, p_position + Vector3(0.0, 1.2, 0.4), 0.7, 0.9)
 
 	_camera.add_trauma(0.12)
 
@@ -662,11 +686,12 @@ func _on_near_miss(p_position: Vector3) -> void:
 	var points := _session.score.register_near_miss()
 	_audio.play(Sfx.NEAR_MISS)
 	_hint(TutorialHints.NEAR_MISS)
-	_texts.spawn("Close call! +%d" % points, Palette.INFO, p_position + Vector3(0.0, 0.9, -2.5), 0.7)
+	var side := signf(p_position.x - _pigeon.position.x) # dal lato del mezzo sfiorato
+	_texts.spawn("Close call! +%d" % points, Palette.INFO, _pigeon.position + Vector3(side * 1.3, -0.5, 1.0), 0.7)
 
 
 func _on_pickup_collected(kind: Pickup.PickupKind, _p_position: Vector3) -> void:
-	var text_position := _pigeon.position + Vector3(0.0, 1.0, -2.5)
+	var text_position := _pigeon.position + Vector3(0.0, -0.6, 1.0) # sotto il piccione, verso la camera
 	match kind:
 		Pickup.PickupKind.CRUMBS:
 			_session.add_ammo(GameConfig.CRUMBS_AMMO)
@@ -679,7 +704,7 @@ func _on_pickup_collected(kind: Pickup.PickupKind, _p_position: Vector3) -> void
 			_audio.play(Sfx.COMBO, -4.0, 1.5)
 			if _save.vibration:
 				Input.vibrate_handheld(40)
-			_texts.spawn("GOLDEN CRUMB!", Palette.GOLDEN_CRUMB, text_position, 1.0, 1.2)
+			_texts.spawn("GOLDEN CRUMB!", Palette.GOLDEN_CRUMB, text_position, 1.0, 0.9)
 
 
 func _on_pigeon_hit(p_position: Vector3) -> void:
@@ -1082,6 +1107,29 @@ func _smoke_check_economy(online: GameServicesClient) -> void:
 			break
 	print("[Smoke] briciole d'oro: saldo %d → %d, missioni da riscuotere %d → %d" % [
 		before, online.balance, claimable, online.claimable_missions])
+	await _smoke_check_shop(online)
+
+
+## Negozio con il server finto: catalogo letto, un oggetto comprato e indossato, uno troppo caro rifiutato.
+func _smoke_check_shop(online: GameServicesClient) -> void:
+	var shop := await online.fetch_shop()
+	if not shop.ok:
+		_smoke_errors.append("negozio: catalogo non letto (status %d)" % shop.status)
+		return
+	var before := online.balance
+	var bought := await online.buy_item("cap")
+	var too_expensive := await online.buy_item("crow")
+	if not bought.ok or not online.owned_items.has("cap") or online.balance != before - 150:
+		_smoke_errors.append("negozio: acquisto non riuscito (status %d, saldo %d → %d)" % [bought.status, before, online.balance])
+	if too_expensive.status != 409:
+		_smoke_errors.append("negozio: acquisto troppo caro non rifiutato (status %d)" % too_expensive.status)
+	var look := BirdLook.from_dict({"head": "cap", "species": "crow"})
+	look.keep_owned(Array(online.owned_items))
+	if look.head != &"cap" or look.species != BirdCatalog.PIGEON:
+		_smoke_errors.append("negozio: oggetti posseduti non rispettati")
+	_pigeon.set_look(look)
+	print("[Smoke] negozio: %d oggetti, saldo %d → %d, posseduti %s" % [
+		(shop.data().get("items", []) as Array).size(), before, online.balance, online.owned_items])
 
 
 ## Controlli senza grafica: regole della pubblicità a schermo intero e salvataggio JSON.

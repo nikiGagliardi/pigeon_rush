@@ -2,7 +2,17 @@
 import json, sys, uuid, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-STATE = {"players": {}, "runs": [], "balance": {}, "claimed": set()}
+STATE = {"players": {}, "runs": [], "balance": {}, "claimed": set(), "owned": {}}
+CATALOG = [("pigeon", "bird", 0, "common"), ("crow", "bird", 2500, "special"), ("classic", "feathers", 0, "common"),
+           ("dove", "feathers", 250, "common"), ("cap", "head", 150, "common"), ("sunglasses", "face", 180, "common"),
+           ("cowbell", "neck", 200, "common"), ("dragon_wings", "bird", 100, "common")]  # l'ultimo: sconosciuto al gioco
+
+
+def shop(token):
+    owned = STATE["owned"].get(token, set())
+    items = [{"id": i, "category": c, "price": p, "tier": t, "owned": p == 0 or i in owned, "availableUntil": None}
+             for i, c, p, t in CATALOG]
+    return {"balance": STATE["balance"].get(token, 0), "items": items}
 REQUIRED_STATS = {"hits", "nearMisses", "bestCombo", "continuesUsed", "busHits", "truckHits", "nightDistance", "goldenCrumbs"}
 
 
@@ -51,6 +61,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"balance": STATE["balance"].get(token, 0), "earnedToday": 0, "dailyCap": 1500})
         if self.path.endswith("/missions"):
             return self._send(200, missions(token))
+        if "/shop" in self.path:
+            return self._send(200, shop(token))
         self._send(404, {"error": "not_found"})
 
     def do_PATCH(self):
@@ -64,6 +76,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/v1/players":
             token = uuid.uuid4().hex
             STATE["players"][token] = True
+            STATE["balance"][token] = 300  # saldo di partenza, per provare il negozio
             return self._send(201, {"playerId": str(uuid.uuid4()), "token": token, "displayName": "SmokePigeon", "nameSuffix": 42})
         token = self._token()
         if token is None:
@@ -82,6 +95,17 @@ class Handler(BaseHTTPRequestHandler):
             STATE["balance"][token] = STATE["balance"].get(token, 0) + earned
             return self._send(200, {"accepted": True, "ranked": ranked, "personalBest": True, "rank": 3, "weekRank": 2,
                                     "crumbsEarned": earned, "balance": STATE["balance"][token]})
+        if self.path.endswith("/shop/buy"):
+            item = next((c for c in CATALOG if c[0] == body.get("itemId")), None)
+            if item is None:
+                return self._send(404, {"error": "unknown_item"})
+            owned = STATE["owned"].setdefault(token, set())
+            if item[0] not in owned and item[2] > 0:
+                if STATE["balance"].get(token, 0) < item[2]:
+                    return self._send(409, {"error": "insufficient_funds"})
+                STATE["balance"][token] = STATE["balance"].get(token, 0) - item[2]
+                owned.add(item[0])
+            return self._send(200, shop(token))
         if "/missions/" in self.path and self.path.endswith("/claim"):
             mid = self.path.split("/")[-2]
             m = next((m for m in missions(token)["missions"] if m["id"] == mid), None)

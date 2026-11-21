@@ -44,6 +44,8 @@ var _last_lap: int = -1
 const BANNER_TIME := 2.8
 ## Suggerimenti delle prime partite (TutorialHints): quanto restano a schermo.
 const HINT_TIME := 4.0
+## Durata del messaggio mostrato adesso (suggerimento o avviso).
+var _hint_duration: float = HINT_TIME
 
 var _hint: PanelContainer
 var _hint_label: Label
@@ -236,9 +238,23 @@ func show_hint(text: String) -> void:
 			_hint_queue.append(text)
 		return
 	_hint_label.text = text
+	_hint_label.add_theme_color_override("font_color", Color.WHITE)
 	_hint_time = HINT_TIME
+	_hint_duration = HINT_TIME
 	_hint.visible = true
 	_hint.modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+
+## Avviso urgente nella stessa zona dei suggerimenti ("Out of poop!"): subito, anche se c'è un suggerimento,
+## e anche con i suggerimenti spenti nelle impostazioni. Il suggerimento interrotto torna dopo.
+func show_alert(text: String, duration: float = 1.6) -> void:
+	if _hint_time > 0.0 and _hint_label.text != text and not _hint_queue.has(_hint_label.text):
+		_hint_queue.insert(0, _hint_label.text)
+	_hint_label.text = text
+	_hint_label.add_theme_color_override("font_color", Palette.DANGER.lightened(0.25))
+	_hint_time = duration
+	_hint_duration = duration
+	_hint.visible = true
 
 
 func clear_hints() -> void:
@@ -251,7 +267,7 @@ func _tick_hint(dt: float) -> void:
 	if _hint_time <= 0.0:
 		return
 	_hint_time = maxf(0.0, _hint_time - dt)
-	var shown := HINT_TIME - _hint_time
+	var shown := _hint_duration - _hint_time
 	_hint.modulate = Color(1.0, 1.0, 1.0, minf(shown / 0.25, 1.0) * minf(_hint_time / 0.4, 1.0))
 	if _hint_time <= 0.0:
 		_hint.visible = false
