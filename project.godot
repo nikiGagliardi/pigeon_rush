@@ -13,12 +13,12 @@ config_version=5
 config/name="Pigeon Rush"
 config/description="A pigeon flying the wrong way down the motorway: dodge trucks and signs, splat cars with poop and fly ever faster."
 config/version="0.7.0"
-config/quit_on_go_back=false
 run/main_scene="res://Scenes/Main.tscn"
+config/quit_on_go_back=false
 config/features=PackedStringArray("4.7", "Mobile")
-config/icon="res://Art/Icon/icon_512.png"
 boot_splash/bg_color=Color(0.105882, 0.137255, 0.2, 1)
 boot_splash/image="res://Art/Icon/icon_512.png"
+config/icon="res://Art/Icon/icon_512.png"
 
 [debug]
 
